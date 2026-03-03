@@ -1,30 +1,264 @@
-@model BYUIVerbaCollect.Models.CourseRequest
 @using BYUIVerbaCollect.Models
-@{ ViewData["Title"] = $"Request #{Model.Id}"; }
+@model CourseRequest
+@{
+    ViewData["Title"]     = Model.CourseNumber;
+    ViewData["PageTitle"] = "COURSES";
+    var role = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "";
+    var bookItems    = Model.Items.Where(i => i.ItemType == ItemType.Book).ToList();
+    var supplyItems  = Model.Items.Where(i => i.ItemType == ItemType.Supply).ToList();
+    var msgCount     = 0; // placeholder for messages count
+}
 
-<div class="d-flex justify-content-between align-items-start mb-3">
-  <div class="page-header flex-grow-1 me-3">
-    <h2><i class="bi bi-file-text me-2"></i>Request #@Model.Id</h2>
-    <p class="mb-0 opacity-75">@Model.CourseNumber — @Model.CourseName (@Model.Semester)</p>
-  </div>
-  <div class="mt-2">
-    <span class="badge status-badge-@Model.Status.ToString().ToLower() fs-6">
-      @Model.Status.ToString().SplitCamelCase()
-    </span>
-  </div>
-</div>
-
-@await Html.PartialAsync("_RequestDetails", Model)
-
-@if (Model.RejectionNote is not null)
-{
-  <div class="alert alert-danger mt-3">
-    <i class="bi bi-x-circle-fill me-2"></i><strong>Rejection Note:</strong> @Model.RejectionNote
+@section SubHeaderActions {
+  <a class="btn-back-courses" asp-controller="Dashboard" asp-action="Index">
+    ← BACK TO COURSES
+  </a>
+  <button class="btn-next-course" disabled>NEXT COURSE →</button>
+  <a class="btn-watch-video" href="#">
+    <i class="bi bi-play-circle-fill me-1"></i>WATCH VIDEO
+  </a>
+  <div class="dropdown">
+    <button class="btn-course-actions dropdown-toggle" type="button" data-bs-toggle="dropdown">
+      COURSE ACTIONS
+    </button>
+    <ul class="dropdown-menu dropdown-menu-end">
+      @if (role == "OfficeManager" && Model.Status == RequestStatus.PendingVerification)
+      {
+        <li>
+          <a class="dropdown-item" asp-controller="Requests" asp-action="Verify" asp-route-id="@Model.Id">
+            <i class="bi bi-shield-check me-2"></i>Verify this Request
+          </a>
+        </li>
+      }
+      @if (role == "BookstoreStaff" && Model.Status == RequestStatus.Verified)
+      {
+        <li>
+          <a class="dropdown-item text-success" asp-controller="Requests" asp-action="Approve" asp-route-id="@Model.Id">
+            <i class="bi bi-check-circle me-2"></i>Approve this Request
+          </a>
+        </li>
+      }
+      <li>
+        <a class="dropdown-item" asp-controller="Availability" asp-action="Index">
+          <i class="bi bi-robot me-2"></i>Book Availability Report
+        </a>
+      </li>
+      <li>
+        <a class="dropdown-item" asp-controller="Dashboard" asp-action="Index">
+          <i class="bi bi-arrow-left me-2"></i>Back to Courses
+        </a>
+      </li>
+    </ul>
   </div>
 }
 
-<div class="mt-3">
-  <a asp-controller="Dashboard" asp-action="Index" class="btn btn-outline-secondary">
-    <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
-  </a>
-</div>
+<!-- ═══ Detail Layout ═══ -->
+<div class="verba-detail-layout">
+
+  <!-- Left Sidebar: Sections list -->
+  <aside class="verba-detail-sidebar">
+    <button class="detail-sidebar-merge-btn">
+      <i class="bi bi-diagram-2 me-1"></i>MERGE OR SPLIT SECTIONS
+    </button>
+
+    <!-- Section entry -->
+    <div class="detail-section-item active">
+      <span class="detail-section-dots">● ● ●</span>
+      <div>
+        <div>@(Model.Submitter?.FullName?.ToUpper() ?? "UNKNOWN")</div>
+        <div style="font-size:9px;color:#667;font-weight:400;">(@(Model.Section ?? "01"))</div>
+      </div>
+    </div>
+
+    <!-- If multiple items, show them as sub-sections -->
+    @if (bookItems.Count > 1)
+    {
+      @for (int i = 0; i < bookItems.Count; i++)
+      {
+        <div class="detail-section-item" style="padding-left:24px;">
+          <i class="bi bi-pencil detail-section-pencil"></i>
+          <div style="font-size:10px;">@bookItems[i].Title?.ToUpper()</div>
+        </div>
+      }
+    }
+
+    <!-- Spacer / gray area -->
+    <div style="flex:1; background:#e8eaed; min-height:200px; margin-top:8px;"></div>
+  </aside>
+
+  <!-- Main Content -->
+  <div class="verba-detail-main">
+
+    <!-- Message bar + Approved button -->
+    <div class="detail-message-bar">
+      <input class="detail-message-input" type="text" placeholder="Post or send a message..." />
+      <div style="display:flex;">
+        <button class="btn-approved-green">
+          @if (Model.Status == RequestStatus.Approved)
+          {
+            <i class="bi bi-check-lg me-1"></i>
+            <text>APPROVED</text>
+          }
+          else if (Model.Status == RequestStatus.Verified)
+          {
+            <i class="bi bi-shield-check me-1"></i>
+            <text>REVIEWED</text>
+          }
+          else
+          {
+            <i class="bi bi-hourglass-split me-1"></i>
+            <text>PENDING</text>
+          }
+        </button>
+        <button class="btn-approved-refresh"><i class="bi bi-arrow-clockwise"></i></button>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="detail-tabs">
+      <button class="detail-tab active" onclick="switchTab(this,'tab-materials')">
+        <span class="detail-tab-count">@Model.Items.Count</span>
+        SELECTED MATERIALS
+      </button>
+      <button class="detail-tab" onclick="switchTab(this,'tab-copy')">
+        COPY ANOTHER ADOPTION
+      </button>
+      <button class="detail-tab" onclick="switchTab(this,'tab-add')">
+        ADD MATERIALS
+      </button>
+      <button class="detail-tab" onclick="switchTab(this,'tab-messages')">
+        <span class="detail-tab-count" style="background:#556;">@msgCount</span>
+        MESSAGES &amp; ACTIVITY
+      </button>
+    </div>
+
+    <!-- Tab Content -->
+    <div class="detail-tab-content">
+
+      <!-- Tab: Selected Materials -->
+      <div id="tab-materials" class="detail-tab-pane active">
+        @if (!Model.Items.Any())
+        {
+          <div class="no-materials-state">
+            <div class="no-materials-icon">⚠</div>
+            <div class="no-materials-text">
+              @if (Model.Status == RequestStatus.Approved)
+              {
+                <text>APPROVED WITH NO TEXT REQUIRED</text>
+              }
+              else
+              {
+                <text>NO MATERIALS SUBMITTED YET</text>
+              }
+            </div>
+          </div>
+        }
+        else
+        {
+          @foreach (var item in Model.Items)
+          {
+            <div class="material-card">
+              <div class="d-flex justify-content-between align-items-start mb-1">
+                <div>
+                  <span class="material-card-title">@(item.Title ?? "Untitled")</span>
+                  @if (item.IsRequired)
+                  {
+                    <span class="badge-required ms-2">REQUIRED</span>
+                  }
+                  else
+                  {
+                    <span class="badge-optional ms-2">OPTIONAL</span>
+                  }
+                </div>
+                <span class="badge-exported">@item.ItemType.ToString().ToUpper()</span>
+              </div>
+              <div class="material-card-meta">
+                @item.Author@(item.Publisher != null ? $" · {item.Publisher}" : "")@(item.Edition != null ? $" · {item.Edition}" : "")@(item.PublicationYear.HasValue ? $" ({item.PublicationYear})" : "")
+              </div>
+              @if (!string.IsNullOrEmpty(item.Isbn))
+              {
+                <span class="material-card-isbn">ISBN: @item.Isbn</span>
+              }
+              @if (!string.IsNullOrEmpty(item.Notes))
+              {
+                <div class="mt-2 small text-muted"><i class="bi bi-chat-left-text me-1"></i>@item.Notes</div>
+              }
+            </div>
+          }
+        }
+      </div>
+
+      <!-- Tab: Copy Another Adoption -->
+      <div id="tab-copy" class="detail-tab-pane">
+        <div class="no-materials-state">
+          <div class="no-materials-icon"><i class="bi bi-files"></i></div>
+          <div class="no-materials-text">SELECT A PREVIOUS ADOPTION TO COPY</div>
+        </div>
+      </div>
+
+      <!-- Tab: Add Materials -->
+      <div id="tab-add" class="detail-tab-pane">
+        @if (role == "Professor" || role == "OfficeManager")
+        {
+          <a class="btn btn-primary btn-sm mb-3" asp-controller="Requests" asp-action="Submit">
+            <i class="bi bi-plus-circle me-1"></i>Submit New Request with Materials
+          </a>
+        }
+        <div class="no-materials-state" style="padding:30px 0;">
+          <div class="no-materials-icon"><i class="bi bi-book-half"></i></div>
+          <div class="no-materials-text">SEARCH OR ADD BOOKS &amp; SUPPLIES</div>
+        </div>
+      </div>
+
+      <!-- Tab: Messages & Activity -->
+      <div id="tab-messages" class="detail-tab-pane">
+        <div class="small text-muted mb-3">Activity log for request #@Model.Id</div>
+        <div class="material-card">
+          <div class="d-flex gap-2 align-items-start">
+            <i class="bi bi-clock-history text-muted"></i>
+            <div>
+              <div class="fw-bold" style="font-size:12px;">Request Submitted</div>
+              <div style="font-size:11px;color:#778;">@Model.SubmittedAt.ToString("MMM d, yyyy h:mm tt") by @Model.Submitter?.FullName</div>
+            </div>
+          </div>
+        </div>
+        @if (Model.VerifiedAt.HasValue)
+        {
+          <div class="material-card">
+            <div class="d-flex gap-2 align-items-start">
+              <i class="bi bi-shield-check text-info"></i>
+              <div>
+                <div class="fw-bold" style="font-size:12px;">Request Verified</div>
+                <div style="font-size:11px;color:#778;">@Model.VerifiedAt.Value.ToString("MMM d, yyyy h:mm tt") by @Model.VerifiedBy?.FullName</div>
+              </div>
+            </div>
+          </div>
+        }
+        @if (Model.ApprovedAt.HasValue)
+        {
+          <div class="material-card">
+            <div class="d-flex gap-2 align-items-start">
+              <i class="bi bi-check-circle text-success"></i>
+              <div>
+                <div class="fw-bold" style="font-size:12px;">Request Approved</div>
+                <div style="font-size:11px;color:#778;">@Model.ApprovedAt.Value.ToString("MMM d, yyyy h:mm tt") by @Model.ApprovedBy?.FullName</div>
+              </div>
+            </div>
+          </div>
+        }
+      </div>
+
+    </div><!-- /tab-content -->
+  </div><!-- /detail-main -->
+</div><!-- /detail-layout -->
+
+@section Scripts {
+<script>
+function switchTab(btn, tabId) {
+  document.querySelectorAll('.detail-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.detail-tab-pane').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById(tabId).classList.add('active');
+}
+</script>
+}
