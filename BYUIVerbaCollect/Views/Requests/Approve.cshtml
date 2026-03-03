@@ -1,0 +1,56 @@
+@model BYUIVerbaCollect.ViewModels.ReviewRequestViewModel
+@using BYUIVerbaCollect.Models
+@{ ViewData["Title"] = "Approve Request"; }
+
+<div class="page-header" style="border-left: 6px solid #C8A951;">
+  <h2><i class="bi bi-check-circle me-2"></i>Approve Request #@Model.Request.Id</h2>
+  <p class="mb-0 opacity-75">Final approval — once approved, ISBNs are saved to the course catalog</p>
+</div>
+
+<!-- Verified by banner -->
+@if (Model.Request.VerifiedBy is not null)
+{
+  <div class="alert alert-info mb-4">
+    <i class="bi bi-patch-check-fill me-2"></i>
+    Verified by <strong>@Model.Request.VerifiedBy.FullName</strong>
+    on @Model.Request.VerifiedAt?.ToString("MMM d, yyyy h:mm tt")
+  </div>
+}
+
+@await Html.PartialAsync("_RequestDetails", Model.Request)
+
+<div class="card mt-4">
+  <div class="card-header card-header-byui"><i class="bi bi-clipboard-check me-2"></i>Approval Decision</div>
+  <div class="card-body">
+    <form asp-action="Approve" asp-route-id="@Model.Request.Id" method="post">
+      @Html.AntiForgeryToken()
+
+      <div id="rejectPanel" class="d-none mb-3">
+        <label class="form-label fw-semibold text-danger">Rejection Reason</label>
+        <textarea name="rejectionNote" class="form-control" rows="3" placeholder="Explain why this request is being rejected..."></textarea>
+      </div>
+
+      <div class="d-flex gap-3 flex-wrap">
+        <button type="submit" name="action" value="approve" class="btn btn-success btn-lg px-5">
+          <i class="bi bi-check-circle me-2"></i>Approve &amp; Save to Catalog
+        </button>
+        <button type="button" class="btn btn-outline-danger btn-lg" onclick="toggleReject()">
+          <i class="bi bi-x-circle me-2"></i>Reject
+        </button>
+        <button type="submit" name="action" value="reject" id="confirmReject" class="btn btn-danger btn-lg d-none">
+          <i class="bi bi-x-circle me-2"></i>Confirm Rejection
+        </button>
+        <a asp-controller="Dashboard" asp-action="Index" class="btn btn-outline-secondary btn-lg ms-auto">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+@section Scripts {
+<script>
+function toggleReject() {
+  document.getElementById('rejectPanel').classList.toggle('d-none');
+  document.getElementById('confirmReject').classList.toggle('d-none');
+}
+</script>
+}

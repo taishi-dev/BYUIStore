@@ -1,0 +1,125 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   BYUI Verba Collect — Custom Stylesheet
+   Brand colours:  Blue #003B71   Gold #C8A951
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --byui-blue: #003B71;
+  --byui-gold: #C8A951;
+}
+
+body {
+  background: #f0f3f7;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+/* ── Navbar ───────────────────────────────────────────────────────────────── */
+.navbar-byui { background: var(--byui-blue); }
+.navbar-byui .navbar-brand,
+.navbar-byui .nav-link,
+.navbar-byui .navbar-text { color: #fff !important; }
+.navbar-byui .nav-link:hover { color: var(--byui-gold) !important; }
+.badge-role {
+  background: var(--byui-gold);
+  color: var(--byui-blue);
+  font-size: .72rem;
+  font-weight: 700;
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+
+/* ── Page Header Band ─────────────────────────────────────────────────────── */
+.page-header {
+  background: var(--byui-blue);
+  color: #fff;
+  padding: 1.25rem 1.5rem;
+  border-radius: .6rem;
+  margin-bottom: 1.5rem;
+}
+.page-header h2 { margin: 0; font-weight: 700; }
+
+/* ── Cards ────────────────────────────────────────────────────────────────── */
+.card {
+  border: none;
+  box-shadow: 0 2px 10px rgba(0,0,0,.07);
+  border-radius: .6rem;
+}
+.card-header-byui {
+  background: var(--byui-blue);
+  color: #fff;
+  border-radius: .6rem .6rem 0 0 !important;
+  font-weight: 600;
+  padding: .75rem 1.1rem;
+}
+
+/* ── Stat Cards ───────────────────────────────────────────────────────────── */
+.stat-card {
+  transition: transform .15s, box-shadow .15s;
+}
+.stat-card:hover { transform: translateY(-3px); box-shadow: 0 6px 18px rgba(0,0,0,.12); }
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+.btn-byui {
+  background: var(--byui-blue);
+  color: #fff;
+  border: none;
+}
+.btn-byui:hover { background: #00509e; color: #fff; }
+
+.btn-outline-byui {
+  border: 1.5px solid var(--byui-blue);
+  color: var(--byui-blue);
+}
+.btn-outline-byui:hover { background: var(--byui-blue); color: #fff; }
+
+.btn-gold {
+  background: var(--byui-gold);
+  color: var(--byui-blue);
+  font-weight: 700;
+  border: none;
+}
+.btn-gold:hover { background: #b5963e; color: var(--byui-blue); }
+
+/* ── Status Badges ────────────────────────────────────────────────────────── */
+.status-badge-pendingverification { background:#ffc107 !important; color:#333 !important; }
+.status-badge-verified            { background:#0dcaf0 !important; color:#333 !important; }
+.status-badge-approved            { background:#198754 !important; color:#fff !important; }
+.status-badge-rejected            { background:#dc3545 !important; color:#fff !important; }
+
+/* ── ISBN search result cards ─────────────────────────────────────────────── */
+.result-card {
+  cursor: pointer;
+  border: 1px solid #dee2e6;
+  border-radius: .4rem;
+  padding: .75rem 1rem;
+  margin-bottom: .45rem;
+  transition: box-shadow .15s, background .1s;
+}
+.result-card:hover {
+  box-shadow: 0 0 0 2px var(--byui-blue);
+  background: #eef4fc;
+}
+.isbn-pill {
+  background: var(--byui-gold);
+  color: var(--byui-blue);
+  font-weight: 700;
+  font-size: .78rem;
+  border-radius: 20px;
+  padding: 2px 9px;
+  font-family: "Courier New", monospace;
+}
+
+/* ── Item rows on Submit form ─────────────────────────────────────────────── */
+.item-row { background: #fff; }
+.item-row:nth-child(even) { background: #f8f9fa; }
+
+/* ── Tables ───────────────────────────────────────────────────────────────── */
+.table thead th {
+  font-size: .82rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #6c757d;
+}
+
+/* ── Misc ─────────────────────────────────────────────────────────────────── */
+code.text-success { font-size: .95rem; }

@@ -1,0 +1,242 @@
+@using BYUIVerbaCollect.Services
+@model List<BookAvailabilityItem>
+@{ ViewData["Title"] = "Book Availability Report"; }
+
+<div class="page-header">
+  <div class="d-flex justify-content-between align-items-start">
+    <div>
+      <h2><i class="bi bi-robot me-2"></i>Book Availability Automation</h2>
+      <p class="mb-0 opacity-75">
+        Auto-checks every approved book from last semester: price, digital edition,
+        Amazon availability, student count, and required vs. optional status.
+      </p>
+    </div>
+    <form method="get" class="d-flex align-items-center gap-2 mt-1">
+      <label class="text-white fw-semibold mb-0">Semester:</label>
+      <select name="semester" class="form-select form-select-sm" onchange="this.form.submit()" style="min-width:160px">
+        @foreach (var s in ViewBag.Semesters as List<string> ?? new())
+        {
+          <option value="@s" selected="@(s == ViewBag.SelectedSemester ? "selected" : null)">@s</option>
+        }
+      </select>
+    </form>
+  </div>
+</div>
+
+@if (!Model.Any())
+{
+  <div class="alert alert-info mt-3">
+    <i class="bi bi-info-circle me-2"></i>
+    No approved book requests found for <strong>@ViewBag.SelectedSemester</strong>.
+    Once a coordinator's request is approved, books appear here automatically.
+  </div>
+}
+else
+{
+  <!-- Summary cards -->
+  <div class="row g-3 mb-4">
+    @{
+      int totalBooks      = Model.Count;
+      int printAvail      = Model.Count(b => b.PrintAvailableOnGoogle);
+      int digitalAvail    = Model.Count(b => b.DigitalAvailableOnVitalSource || b.EbookAvailableOnGoogle);
+      int requiredCount   = Model.Count(b => b.IsRequired);
+      int totalStudents   = Model.Sum(b => b.EnrollmentCount);
+    }
+    <div class="col-6 col-md-3">
+      <div class="card text-center border-0 shadow-sm">
+        <div class="card-body py-3">
+          <div class="fs-1 fw-bold text-primary">@totalBooks</div>
+          <div class="text-muted small">Unique Books</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card text-center border-0 shadow-sm">
+        <div class="card-body py-3">
+          <div class="fs-1 fw-bold text-success">@digitalAvail</div>
+          <div class="text-muted small">Digital Available</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card text-center border-0 shadow-sm">
+        <div class="card-body py-3">
+          <div class="fs-1 fw-bold text-danger">@requiredCount</div>
+          <div class="text-muted small">Required Books</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card text-center border-0 shadow-sm">
+        <div class="card-body py-3">
+          <div class="fs-1 fw-bold text-info">@totalStudents</div>
+          <div class="text-muted small">Total Students Enrolled</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main table -->
+  <div class="card shadow-sm">
+    <div class="card-header card-header-byui d-flex justify-content-between align-items-center">
+      <span><i class="bi bi-table me-2"></i>Automation Checklist — @ViewBag.SelectedSemester</span>
+      <small class="opacity-75">Checks run live against Amazon, VitalSource &amp; Google Books</small>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0" id="availTable">
+        <thead class="table-light">
+          <tr>
+            <th style="width:32px"></th>
+            <th>Book</th>
+            <th>Course</th>
+            <th class="text-center">Required?</th>
+            <th class="text-center">Students</th>
+            <th class="text-center">Print&nbsp;Available</th>
+            <th class="text-center">Digital</th>
+            <th>Price</th>
+            <th>Buy / Search</th>
+          </tr>
+        </thead>
+        <tbody>
+          @foreach (var b in Model)
+          {
+            <tr>
+              <!-- Cover -->
+              <td>
+                @if (!string.IsNullOrEmpty(b.CoverThumbnailUrl))
+                {
+                  <img src="@b.CoverThumbnailUrl" alt="cover" style="width:32px;height:42px;object-fit:cover;border-radius:3px;" />
+                }
+                else
+                {
+                  <div style="width:32px;height:42px;background:#e9ecef;border-radius:3px;display:flex;align-items:center;justify-content:center;">
+                    <i class="bi bi-book text-muted" style="font-size:.7rem;"></i>
+                  </div>
+                }
+              </td>
+
+              <!-- Title / Author / ISBN -->
+              <td>
+                <div class="fw-semibold">@b.Title</div>
+                @if (!string.IsNullOrEmpty(b.Author))
+                { <small class="text-muted d-block">@b.Author</small> }
+                @if (!string.IsNullOrEmpty(b.Publisher))
+                { <small class="text-muted d-block"><i class="bi bi-building me-1"></i>@b.Publisher @(!string.IsNullOrEmpty(b.Edition) ? "· " + b.Edition : "")</small> }
+                <code class="small text-secondary">@b.Isbn</code>
+              </td>
+
+              <!-- Course -->
+              <td>
+                <span class="fw-semibold">@b.CourseNumber</span>
+                <small class="text-muted d-block">@b.CourseName</small>
+              </td>
+
+              <!-- Required -->
+              <td class="text-center">
+                @if (b.IsRequired)
+                { <span class="badge bg-danger">Required</span> }
+                else
+                { <span class="badge bg-secondary">Optional</span> }
+              </td>
+
+              <!-- Student count -->
+              <td class="text-center">
+                <span class="fw-bold @(b.EnrollmentCount > 0 ? "text-dark" : "text-muted")">
+                  @(b.EnrollmentCount > 0 ? b.EnrollmentCount : "—")
+                </span>
+                @if (b.EnrollmentCount > 0)
+                { <small class="text-muted d-block">students</small> }
+              </td>
+
+              <!-- Print available -->
+              <td class="text-center">
+                @if (b.PrintAvailableOnGoogle)
+                {
+                  <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Yes</span>
+                }
+                else
+                {
+                  <span class="badge bg-warning text-dark"><i class="bi bi-question-circle me-1"></i>Check</span>
+                }
+              </td>
+
+              <!-- Digital available -->
+              <td class="text-center">
+                @{
+                  bool anyDigital = b.DigitalAvailableOnVitalSource || b.EbookAvailableOnGoogle;
+                }
+                @if (b.DigitalAvailableOnVitalSource)
+                {
+                  <a href="@b.VitalSourceUrl" target="_blank" class="badge bg-info text-white text-decoration-none"
+                     title="Available on VitalSource">
+                    <i class="bi bi-tablet me-1"></i>VitalSource
+                  </a>
+                }
+                @if (b.EbookAvailableOnGoogle)
+                {
+                  <a href="@b.GoogleBuyLink" target="_blank" class="badge bg-primary text-white text-decoration-none ms-1"
+                     title="eBook on Google Books">
+                    <i class="bi bi-book me-1"></i>eBook
+                  </a>
+                }
+                @if (!anyDigital)
+                {
+                  <span class="text-muted small">—</span>
+                }
+              </td>
+
+              <!-- Price -->
+              <td>
+                @if (b.PrintRetailPrice.HasValue)
+                {
+                  <div>
+                    <small class="text-muted">Print:</small>
+                    <strong class="text-success">$@b.PrintRetailPrice.Value.ToString("F2")</strong>
+                    @if (b.PrintListPrice.HasValue && b.PrintListPrice != b.PrintRetailPrice)
+                    { <small class="text-muted text-decoration-line-through ms-1">$@b.PrintListPrice.Value.ToString("F2")</small> }
+                  </div>
+                }
+                @if (b.EbookPrice.HasValue)
+                {
+                  <div>
+                    <small class="text-muted">eBook:</small>
+                    <strong class="text-info">$@b.EbookPrice.Value.ToString("F2")</strong>
+                  </div>
+                }
+                @if (!b.PrintRetailPrice.HasValue && !b.EbookPrice.HasValue)
+                { <span class="text-muted small">Not listed</span> }
+              </td>
+
+              <!-- Buy links -->
+              <td>
+                <div class="d-flex flex-column gap-1">
+                  <a href="@b.AmazonUrl" target="_blank" class="btn btn-outline-warning btn-sm py-0"
+                     title="Search on Amazon">
+                    <i class="bi bi-bag me-1"></i>Amazon
+                  </a>
+                  @if (!string.IsNullOrEmpty(b.GoogleBuyLink))
+                  {
+                    <a href="@b.GoogleBuyLink" target="_blank" class="btn btn-outline-primary btn-sm py-0"
+                       title="Buy on Google Books">
+                      <i class="bi bi-google me-1"></i>Google
+                    </a>
+                  }
+                  <a href="@b.VitalSourceUrl" target="_blank" class="btn btn-outline-info btn-sm py-0"
+                     title="Check VitalSource">
+                    <i class="bi bi-tablet me-1"></i>VitalSource
+                  </a>
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <div class="card-footer text-muted small">
+      <i class="bi bi-info-circle me-1"></i>
+      Print availability and prices are from Google Books. Digital availability is checked live from VitalSource.
+      Amazon links open a search for the ISBN — actual price and availability may vary.
+      Student counts come from the BYUI course enrollment database.
+    </div>
+  </div>
+}
