@@ -9,6 +9,8 @@
 
 @await Html.PartialAsync("_RequestDetails", Model.Request)
 
+@await Html.PartialAsync("_BookChecklist", Model.Request)
+
 <div class="card mt-4">
   <div class="card-header card-header-byui"><i class="bi bi-check2-square me-2"></i>Verification Decision</div>
   <div class="card-body">

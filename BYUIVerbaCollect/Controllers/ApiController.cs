@@ -11,11 +11,14 @@ public class ApiController : ControllerBase
 {
     private readonly IsbnLookupService _isbnSearch;
     private readonly IsbnDirectLookupService _isbnDirect;
+    private readonly BookAvailabilityService _availService;
 
-    public ApiController(IsbnLookupService isbnSearch, IsbnDirectLookupService isbnDirect)
+    public ApiController(IsbnLookupService isbnSearch, IsbnDirectLookupService isbnDirect,
+        BookAvailabilityService availService)
     {
-        _isbnSearch = isbnSearch;
-        _isbnDirect = isbnDirect;
+        _isbnSearch   = isbnSearch;
+        _isbnDirect   = isbnDirect;
+        _availService = availService;
     }
 
     /// <summary>
@@ -51,5 +54,70 @@ public class ApiController : ControllerBase
             return NotFound(new { error = $"No book found for ISBN '{isbn}'. Please verify the number." });
 
         return Ok(result);
+    }
+
+    /// <summary>
+    /// GET /api/check-availability?isbn=...
+    /// Checks Google Books (price/eBook) and VitalSource (digital match) for one ISBN.
+    /// Used by the "ADD MATERIALS" tab on the Details page.
+    /// </summary>
+    [HttpGet("check-availability")]
+    public async Task<IActionResult> CheckAvailability([FromQuery] string isbn)
+    {
+        if (string.IsNullOrWhiteSpace(isbn))
+            return BadRequest(new { error = "ISBN required." });
+
+        var result = await _availService.CheckSingleIsbnAsync(isbn.Trim());
+        return Ok(new
+        {
+            digitalVitalSource = result.DigitalAvailableOnVitalSource,
+            digitalGoogle      = result.EbookAvailableOnGoogle,
+            googlePrice        = result.EbookPrice,
+            printPrice         = result.PrintRetailPrice ?? result.PrintListPrice,
+            amazonUrl          = result.AmazonUrl,
+            vitalsourceUrl     = result.VitalSourceUrl,
+            googleBuyLink      = result.GoogleBuyLink,
+            coverThumbnail     = result.CoverThumbnailUrl
+        });
+    }
+
+    /// <summary>
+    /// GET /api/book-checklist?isbn=...&amp;courseNumber=...&amp;isRequired=...&amp;requestId=...
+    /// Runs the full 4-point automated review checklist for one book:
+    ///   1. Still available to buy (Amazon + Google)
+    ///   2. Price (flagged if &gt; $100 → suggest contacting professor)
+    ///   3. Digital availability (VitalSource first, then Google Books)
+    ///   4. Required/Optional change detection vs previous semester
+    /// Called automatically when the Verify or Approve page loads.
+    /// </summary>
+    [HttpGet("book-checklist")]
+    public async Task<IActionResult> BookChecklist(
+        [FromQuery] string isbn,
+        [FromQuery] string? courseNumber = null,
+        [FromQuery] bool isRequired = true,
+        [FromQuery] int? requestId = null)
+    {
+        if (string.IsNullOrWhiteSpace(isbn))
+            return BadRequest(new { error = "ISBN required." });
+
+        var r = await _availService.CheckBookChecklistAsync(
+            isbn.Trim(), courseNumber, isRequired, requestId);
+
+        return Ok(new
+        {
+            isbn                = r.Isbn,
+            printAvailable      = r.PrintAvailable,
+            printPrice          = r.PrintPrice,
+            priceFlagged        = r.PriceFlagged,
+            digitalOnVitalSource = r.DigitalOnVitalSource,
+            digitalOnGoogle     = r.DigitalOnGoogle,
+            vitalSourceUrl      = r.VitalSourceUrl,
+            amazonUrl           = r.AmazonUrl,
+            googleBuyLink       = r.GoogleBuyLink,
+            coverThumbnail      = r.CoverThumbnail,
+            requiredChanged     = r.RequiredChanged,
+            previousIsRequired  = r.PreviousIsRequired,
+            previousSemester    = r.PreviousSemester
+        });
     }
 }

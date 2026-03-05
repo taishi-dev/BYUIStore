@@ -20,14 +20,14 @@
 
 <!-- ═══ Top Navigation Bar ═══ -->
 <header class="verba-topbar">
-  <div class="verba-brand">
+  <a asp-controller="Dashboard" asp-action="Index" class="verba-brand" style="text-decoration:none;cursor:pointer;">
     <div class="brand-byuidaho">
       <span class="brand-byu">BYU</span>
       <span class="brand-idaho">IDAHO</span>
     </div>
     <div class="brand-divider-v"></div>
     <span class="brand-store-name">UNIVERSITY STORE</span>
-  </div>
+  </a>
 
   @if (User.Identity?.IsAuthenticated == true)
   {

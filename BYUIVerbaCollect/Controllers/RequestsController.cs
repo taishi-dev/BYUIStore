@@ -110,6 +110,21 @@ public class RequestsController : Controller
             .FirstOrDefaultAsync(r => r.Id == id);
 
         if (req is null) return NotFound();
+
+        // Load previous semester adoptions for the same course (for COPY ANOTHER ADOPTION tab)
+        var prevAdoptions = await _db.CourseRequests
+            .Include(r => r.Items)
+            .Include(r => r.Submitter)
+            .Where(r => r.CourseNumber == req.CourseNumber
+                     && r.Id != req.Id
+                     && (r.Status == RequestStatus.Approved
+                         || r.Status == RequestStatus.Verified
+                         || r.Status == RequestStatus.PendingVerification))
+            .OrderByDescending(r => r.SubmittedAt)
+            .Take(5)
+            .ToListAsync();
+
+        ViewBag.PreviousAdoptions = prevAdoptions;
         return View(req);
     }
 
@@ -219,6 +234,172 @@ public class RequestsController : Controller
 
         await _db.SaveChangesAsync();
         return RedirectToAction("Index", "Dashboard");
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // ADD SECTION  (from COURSE ACTIONS → Add Section modal)
+    // ════════════════════════════════════════════════════════════════════════
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> AddSection(int id,
+        string section, string? semester, string? courseName,
+        string? courseNumber, string? instructorName,
+        string? notes, bool copyMaterials = false,
+        List<ItemViewModel>? NewItems = null)
+    {
+        if (string.IsNullOrWhiteSpace(section))
+        {
+            TempData["Error"] = "Section number is required.";
+            return RedirectToAction(nameof(Details), new { id });
+        }
+
+        var source = await _db.CourseRequests
+            .Include(r => r.Items)
+            .FirstOrDefaultAsync(r => r.Id == id);
+
+        if (source is null) return NotFound();
+
+        var newReq = new CourseRequest
+        {
+            SubmitterId  = CurrentUserId,
+            CourseName   = courseName?.Trim()   ?? source.CourseName,
+            CourseNumber = courseNumber?.Trim()  ?? source.CourseNumber,
+            Semester     = semester?.Trim()      ?? source.Semester,
+            Section      = section.Trim(),
+            SubmittedAt  = DateTime.UtcNow,
+            Status       = RequestStatus.PendingVerification
+        };
+
+        // Optionally copy all materials from the source section
+        if (copyMaterials)
+        {
+            foreach (var item in source.Items)
+            {
+                newReq.Items.Add(new RequestItem
+                {
+                    ItemType         = item.ItemType,
+                    Isbn             = item.Isbn,
+                    Title            = item.Title,
+                    Author           = item.Author,
+                    Publisher        = item.Publisher,
+                    Edition          = item.Edition,
+                    PublicationYear  = item.PublicationYear,
+                    IsRequired       = item.IsRequired,
+                    Quantity         = item.Quantity,
+                    Notes            = item.Notes,
+                    SupplyDescription = item.SupplyDescription
+                });
+            }
+        }
+
+        // Add brand-new materials entered directly in the Add Section modal
+        if (NewItems != null)
+        {
+            foreach (var item in NewItems)
+            {
+                var isBook   = item.ItemType != "Supply";
+                var hasBook  = isBook && !string.IsNullOrWhiteSpace(item.Title);
+                var hasSupply = !isBook && !string.IsNullOrWhiteSpace(item.SupplyDescription);
+
+                if (!hasBook && !hasSupply) continue;   // skip empty rows
+
+                newReq.Items.Add(new RequestItem
+                {
+                    ItemType          = isBook ? ItemType.Book : ItemType.Supply,
+                    Isbn              = item.Isbn?.Trim(),
+                    Title             = item.Title?.Trim(),
+                    Author            = item.Author?.Trim(),
+                    Publisher         = item.Publisher?.Trim(),
+                    Edition           = item.Edition?.Trim(),
+                    PublicationYear   = item.PublicationYear,
+                    IsRequired        = item.IsRequired,
+                    Quantity          = item.Quantity > 0 ? item.Quantity : 1,
+                    Notes             = item.Notes?.Trim(),
+                    SupplyDescription = item.SupplyDescription?.Trim()
+                });
+            }
+        }
+
+        // Attach any instructor name as a note on the new request
+        if (!string.IsNullOrWhiteSpace(instructorName))
+        {
+            newReq.Items.Add(new RequestItem
+            {
+                ItemType = ItemType.Supply,
+                SupplyDescription = $"Instructor: {instructorName.Trim()}",
+                Notes    = notes?.Trim(),
+                Quantity = 0,
+                IsRequired = false
+            });
+        }
+
+        _db.CourseRequests.Add(newReq);
+        await _db.SaveChangesAsync();
+
+        TempData["Success"] = $"Section '{section}' added successfully.";
+        return RedirectToAction(nameof(Details), new { id = newReq.Id });
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // ADD ITEM  (inline from Details page)
+    // ════════════════════════════════════════════════════════════════════════
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> AddItem(int id,
+        string? isbn, string? title, string? author,
+        string? publisher, string? edition, int? publicationYear,
+        bool isRequired = true)
+    {
+        var req = await _db.CourseRequests
+            .Include(r => r.Items)
+            .FirstOrDefaultAsync(r => r.Id == id);
+
+        if (req is null) return NotFound();
+
+        if (string.IsNullOrWhiteSpace(isbn) && string.IsNullOrWhiteSpace(title))
+        {
+            TempData["Error"] = "Please provide at least an ISBN or title.";
+            return RedirectToAction(nameof(Details), new { id });
+        }
+
+        var item = new RequestItem
+        {
+            ItemType        = ItemType.Book,
+            Isbn            = isbn?.Trim(),
+            Title           = title?.Trim(),
+            Author          = author?.Trim(),
+            Publisher       = publisher?.Trim(),
+            Edition         = edition?.Trim(),
+            PublicationYear = publicationYear,
+            IsRequired      = isRequired,
+            Quantity        = 1
+        };
+
+        req.Items.Add(item);
+        await _db.SaveChangesAsync();
+
+        TempData["Success"] = $"'{item.Title ?? item.Isbn}' added to the materials list.";
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // REMOVE ITEM  (from Details page)
+    // ════════════════════════════════════════════════════════════════════════
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> RemoveItem(int id, int itemId)
+    {
+        // Verify the item belongs to this request
+        var item = await _db.RequestItems
+            .FirstOrDefaultAsync(i => i.Id == itemId && i.CourseRequestId == id);
+
+        if (item is null) return NotFound();
+
+        _db.RequestItems.Remove(item);
+        await _db.SaveChangesAsync();
+
+        TempData["Success"] = $"'{item.Title ?? item.SupplyDescription ?? "Item"}' removed from the materials list.";
+        return RedirectToAction(nameof(Details), new { id });
     }
 
     // ── helper ────────────────────────────────────────────────────────────

@@ -42,6 +42,9 @@ builder.Services.AddScoped<IsbnDirectLookupService>();
 // ── Book availability automation (Amazon/VitalSource/Google price check) ──
 builder.Services.AddScoped<BookAvailabilityService>();
 
+// ── Email notifications (Material Manager auto-emails) ────────────────────
+builder.Services.AddScoped<IEmailService, EmailService>();
+
 // ── MVC ────────────────────────────────────────────────────────────────────
 builder.Services.AddControllersWithViews();
 

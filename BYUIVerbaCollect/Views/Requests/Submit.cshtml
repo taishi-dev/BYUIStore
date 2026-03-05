@@ -77,7 +77,7 @@
   </div>
 </form>
 
-<!-- Title/Author Search Modal (alternative) -->
+<!-- Title/Author Search Modal -->
 <div class="modal fade" id="titleSearchModal" tabindex="-1">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
@@ -122,8 +122,8 @@ function addBook() {
 
     <div class="d-flex justify-content-between align-items-start mb-3">
       <span class="badge bg-primary fs-6"><i class="bi bi-book me-1"></i>Book #${idx+1}</span>
-      <button type="button" class="btn btn-outline-danger btn-sm" onclick="removeItem('item_${idx}')">
-        <i class="bi bi-trash"></i> Remove
+      <button type="button" class="btn btn-danger btn-sm px-3" onclick="removeItem('item_${idx}')">
+        <i class="bi bi-trash3 me-1"></i>REMOVE FROM LIST
       </button>
     </div>
 
@@ -165,30 +165,51 @@ function addBook() {
             </span>
           </div>
           <div class="card-body py-2">
-            <div class="row g-2">
-              <div class="col-md-6">
-                <small class="text-muted d-block">Title</small>
-                <strong id="conf_title_${idx}"></strong>
+            <div class="d-flex gap-3">
+              <!-- Cover thumbnail -->
+              <div style="width:120px;flex-shrink:0;">
+                <img id="conf_cover_img_${idx}" src="" alt="Cover"
+                     style="width:120px;height:160px;object-fit:cover;border-radius:4px;border:1px solid #ddd;display:none;box-shadow:0 2px 8px rgba(0,0,0,.15);" />
+                <div id="conf_cover_placeholder_${idx}"
+                     style="width:120px;height:160px;background:#e9ecef;border-radius:4px;border:1px solid #ddd;display:flex;align-items:center;justify-content:center;">
+                  <i class="bi bi-book text-muted" style="font-size:2.5rem;"></i>
+                </div>
               </div>
-              <div class="col-md-6">
-                <small class="text-muted d-block">Author</small>
-                <span id="conf_author_${idx}"></span>
-              </div>
-              <div class="col-md-3">
-                <small class="text-muted d-block">ISBN</small>
-                <code id="conf_isbn_${idx}" class="text-success fw-bold"></code>
-              </div>
-              <div class="col-md-4">
-                <small class="text-muted d-block">Publisher</small>
-                <span id="conf_publisher_${idx}"></span>
-              </div>
-              <div class="col-md-2">
-                <small class="text-muted d-block">Edition</small>
-                <span id="conf_edition_${idx}"></span>
-              </div>
-              <div class="col-md-3">
-                <small class="text-muted d-block">Year</small>
-                <span id="conf_year_${idx}"></span>
+              <!-- Metadata -->
+              <div style="flex:1;">
+                <div class="d-flex align-items-start gap-2 mb-1 flex-wrap">
+                  <strong id="conf_title_${idx}" style="line-height:1.3;"></strong>
+                  <span id="conf_ebook_badge_${idx}" class="d-none"
+                        style="color:#2e7d32;font-size:12px;font-weight:700;letter-spacing:.03em;white-space:nowrap;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                         fill="none" stroke="#2e7d32" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
+                         style="vertical-align:-1px;margin-right:3px;">
+                      <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>DIGITAL MATCH
+                  </span>
+                </div>
+                <div class="row g-2">
+                  <div class="col-md-6">
+                    <small class="text-muted d-block">Author</small>
+                    <span id="conf_author_${idx}"></span>
+                  </div>
+                  <div class="col-md-6">
+                    <small class="text-muted d-block">ISBN</small>
+                    <code id="conf_isbn_${idx}" class="text-success fw-bold"></code>
+                  </div>
+                  <div class="col-md-5">
+                    <small class="text-muted d-block">Publisher</small>
+                    <span id="conf_publisher_${idx}"></span>
+                  </div>
+                  <div class="col-md-3">
+                    <small class="text-muted d-block">Edition</small>
+                    <span id="conf_edition_${idx}"></span>
+                  </div>
+                  <div class="col-md-4">
+                    <small class="text-muted d-block">Year</small>
+                    <span id="conf_year_${idx}"></span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -206,11 +227,21 @@ function addBook() {
 
     <!-- Hidden book fields (filled after confirmation) -->
     <div id="bookFields_${idx}" class="d-none">
-      <div class="alert alert-success py-2 mb-2">
-        <i class="bi bi-check-circle-fill me-2"></i>
-        <strong id="confirmed_title_display_${idx}"></strong>
-        — ISBN <code id="confirmed_isbn_display_${idx}" class="fw-bold"></code>
-        <button type="button" class="btn btn-sm btn-outline-secondary ms-3" onclick="resetBook(${idx})">
+      <div class="alert alert-success py-2 mb-2 d-flex align-items-center flex-wrap gap-2">
+        <span>
+          <i class="bi bi-check-circle-fill me-2"></i>
+          <strong id="confirmed_title_display_${idx}"></strong>
+          — ISBN <code id="confirmed_isbn_display_${idx}" class="fw-bold"></code>
+        </span>
+        <span id="confirmed_digital_badge_${idx}" class="d-none"
+              style="display:inline-flex !important;align-items:center;background:#e8f5e9;border:1.5px solid #66bb6a;border-radius:20px;padding:2px 10px;font-size:12px;font-weight:700;color:#2e7d32;white-space:nowrap;gap:4px;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+               fill="none" stroke="#2e7d32" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          Digital Version Available
+        </span>
+        <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" onclick="resetBook(${idx})">
           <i class="bi bi-arrow-counterclockwise me-1"></i>Change Book
         </button>
       </div>
@@ -225,7 +256,7 @@ function addBook() {
     <!-- Common fields -->
     <div class="row g-2 mt-1">
       <div class="col-md-2">
-        <label class="form-label">Qty</label>
+        <label class="form-label">Quantity</label>
         <input type="number" name="Items[${idx}].Quantity" value="1" min="1" max="999" class="form-control" />
       </div>
       <div class="col-md-3 d-flex align-items-end pb-1">
@@ -268,7 +299,7 @@ function addSupply() {
                placeholder="e.g. Scientific calculator TI-84" />
       </div>
       <div class="col-md-2">
-        <label class="form-label">Qty</label>
+        <label class="form-label">Quantity</label>
         <input type="number" name="Items[${idx}].Quantity" value="1" min="1" class="form-control" />
       </div>
       <div class="col-md-2 d-flex align-items-end pb-1">
@@ -303,7 +334,6 @@ async function lookupByIsbn(idx) {
     document.getElementById(`isbnSpinner_${idx}`).classList.add('d-none');
 
     if (res.status === 404) {
-      // Not found in any catalog — offer manual entry
       showManualEntry(idx, isbn);
       return;
     }
@@ -326,12 +356,10 @@ function showIsbnError(idx, msg) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  MANUAL ENTRY FALLBACK (for VitalSource / unknown ISBNs)
+//  MANUAL ENTRY FALLBACK
 // ═══════════════════════════════════════════════════════════
 function showManualEntry(idx, isbn) {
-  // Remove existing manual panel if any
   document.getElementById(`manualPanel_${idx}`)?.remove();
-
   const bar = document.querySelector(`#item_${idx} .isbn-lookup-bar`);
   if (!bar) return;
 
@@ -388,19 +416,14 @@ function showManualEntry(idx, isbn) {
 function confirmManualEntry(idx, isbn) {
   const title = (document.getElementById(`m_title_${idx}`)?.value || '').trim();
   if (!title) { alert('Please enter a book title.'); return; }
-
   const book = {
-    isbn:      isbn,
-    title:     title,
+    isbn, title,
     author:    document.getElementById(`m_author_${idx}`)?.value    || '',
     publisher: document.getElementById(`m_publisher_${idx}`)?.value || '',
     edition:   document.getElementById(`m_edition_${idx}`)?.value   || '',
     year:      parseInt(document.getElementById(`m_year_${idx}`)?.value || '') || null,
-    fromLocalCache: false,
-    source: 'Manual'
+    fromLocalCache: false, source: 'Manual'
   };
-
-  // Use the same confirmation panel to let user review before finalising
   showConfirmation(idx, book);
   document.getElementById(`manualPanel_${idx}`)?.remove();
 }
@@ -411,20 +434,41 @@ function cancelManualEntry(idx) {
   if (inp) inp.value = '';
 }
 
+// ═══════════════════════════════════════════════════════════
+//  SHOW / CONFIRM / CLEAR CONFIRMATION PANEL
+// ═══════════════════════════════════════════════════════════
 function showConfirmation(idx, book) {
   setText(`conf_title_${idx}`,     book.title     || '(no title)');
   setText(`conf_author_${idx}`,    book.author    || '—');
   setText(`conf_isbn_${idx}`,      book.isbn      || '—');
   setText(`conf_publisher_${idx}`, book.publisher || '—');
   setText(`conf_edition_${idx}`,   book.edition   || '—');
-  setText(`conf_year_${idx}`,      book.year      ? String(book.year) : '—');
+  setText(`conf_year_${idx}`,      book.year ? String(book.year) : '—');
 
+  // Local catalog tag
   const cacheTag = document.getElementById(`cacheTag_${idx}`);
-  if (cacheTag) {
-    cacheTag.classList.toggle('d-none', !book.fromLocalCache);
+  if (cacheTag) cacheTag.classList.toggle('d-none', !book.fromLocalCache);
+
+  // Cover image
+  const coverImg  = document.getElementById(`conf_cover_img_${idx}`);
+  const coverPh   = document.getElementById(`conf_cover_placeholder_${idx}`);
+  const coverUrl  = book.coverThumbnail || '';
+  if (coverImg && coverPh) {
+    if (coverUrl) {
+      coverImg.src = coverUrl;
+      coverImg.style.display = '';
+      coverPh.style.display  = 'none';
+    } else {
+      coverImg.style.display = 'none';
+      coverPh.style.display  = 'flex';
+    }
   }
 
-  // Store book data for confirmation
+  // eBook / digital badge — shown when book was found on VitalSource
+  const ebookBadge = document.getElementById(`conf_ebook_badge_${idx}`);
+  if (ebookBadge) ebookBadge.classList.toggle('d-none', !book.digitalOnVitalSource);
+
+  // Store book data and show panel
   const panel = document.getElementById(`confirmPanel_${idx}`);
   if (panel) {
     panel._bookData = book;
@@ -437,19 +481,28 @@ function confirmBook(idx) {
   const book  = panel?._bookData;
   if (!book) return;
 
-  // Fill hidden fields
   setVal(`h_title_${idx}`,     book.title     || '');
   setVal(`h_author_${idx}`,    book.author    || '');
   setVal(`h_isbn_${idx}`,      book.isbn      || '');
   setVal(`h_publisher_${idx}`, book.publisher || '');
   setVal(`h_edition_${idx}`,   book.edition   || '');
-  setVal(`h_year_${idx}`,      book.year      ? String(book.year) : '');
+  setVal(`h_year_${idx}`,      book.year ? String(book.year) : '');
 
-  // Show confirmed summary banner
   setText(`confirmed_title_display_${idx}`, book.title || '');
   setText(`confirmed_isbn_display_${idx}`,  book.isbn  || '');
 
-  // Hide lookup bar, show confirmed fields
+  // Show digital checkmark if book was found on VitalSource
+  const digitalBadge = document.getElementById(`confirmed_digital_badge_${idx}`);
+  if (digitalBadge) {
+    if (book.digitalOnVitalSource) {
+      digitalBadge.classList.remove('d-none');
+      digitalBadge.style.display = 'inline-flex';
+    } else {
+      digitalBadge.classList.add('d-none');
+      digitalBadge.style.display = 'none';
+    }
+  }
+
   panel.classList.add('d-none');
   document.querySelector(`#item_${idx} .isbn-lookup-bar`).style.display = 'none';
   document.getElementById(`bookFields_${idx}`).classList.remove('d-none');
@@ -463,7 +516,6 @@ function clearConfirmation(idx) {
 }
 
 function resetBook(idx) {
-  // Show lookup bar again, hide confirmed fields
   const bar = document.querySelector(`#item_${idx} .isbn-lookup-bar`);
   if (bar) bar.style.display = '';
   document.getElementById(`bookFields_${idx}`)?.classList.add('d-none');
@@ -472,6 +524,9 @@ function resetBook(idx) {
     .forEach(p => setVal(p + idx, ''));
   const inp = document.getElementById(`isbnInput_${idx}`);
   if (inp) inp.value = '';
+  // Hide digital badge when resetting
+  const digitalBadge = document.getElementById(`confirmed_digital_badge_${idx}`);
+  if (digitalBadge) { digitalBadge.classList.add('d-none'); digitalBadge.style.display = 'none'; }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -529,12 +584,8 @@ async function doTitleSearch() {
 
 function selectFromTitleSearch(book) {
   const idx = activeTitleSearchIdx;
-  // Fill the ISBN field and trigger confirmation flow
   const isbnInput = document.getElementById(`isbnInput_${idx}`);
-  if (isbnInput && book.isbn) {
-    isbnInput.value = book.isbn;
-  }
-  // Show confirmation panel directly (data already available)
+  if (isbnInput && book.isbn) isbnInput.value = book.isbn;
   showConfirmation(idx, { ...book, fromLocalCache: false });
   bootstrap.Modal.getInstance(document.getElementById('titleSearchModal'))?.hide();
 }
@@ -543,7 +594,19 @@ function selectFromTitleSearch(book) {
 //  UTILITIES
 // ═══════════════════════════════════════════════════════════
 function removeItem(id) {
-  document.getElementById(id)?.remove();
+  const el = document.getElementById(id);
+  if (!el) return;
+
+  // Get a short label for the confirm message (title if confirmed, otherwise generic)
+  const titleEl = el.querySelector('[id^="confirmed_title_display_"]');
+  const label   = titleEl?.textContent?.trim();
+  const msg     = label
+    ? `Remove "${label}" from the list?`
+    : 'Remove this item from the list?';
+
+  if (!confirm(msg)) return;
+
+  el.remove();
   if (document.getElementById('itemsContainer').children.length === 0)
     document.getElementById('emptyMsg').style.display = '';
 }

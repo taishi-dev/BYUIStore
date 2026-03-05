@@ -23,6 +23,93 @@
   </div>
 </div>
 
+@{
+  // ── Affordability Histogram ───────────────────────────────────────────
+  // Score = max(0, min(100, round(100 - price * 1.25)))
+  // $0=100, $40=50 (medium), $80+=0
+  var booksWithScore = Model.Where(b => b.AffordabilityScore.HasValue).ToList();
+  var bins = new int[10]; // index 0=0-9, 1=10-19 … 9=90-99
+  foreach (var b in booksWithScore)
+    bins[b.AffordabilityScore!.Value / 10]++;
+
+  int termAvg = booksWithScore.Any()
+    ? (int)Math.Round(booksWithScore.Average(b => b.AffordabilityScore!.Value))
+    : 50;
+
+  int maxBin = bins.Max() > 0 ? bins.Max() : 1;
+  string[] labels = { "0-9","10-19","20-29","30-39","40-49","50-59","60-69","70-79","80-89","90-99" };
+}
+
+<!-- ═══ Affordability Histogram ═══ -->
+<div style="background:#2d2d2d;color:#fff;padding:24px 28px 20px;margin-bottom:20px;border-radius:4px;position:relative;">
+
+  <!-- Header row -->
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+    <div style="font-size:11px;font-weight:700;letter-spacing:.8px;color:#ccc;text-transform:uppercase;">
+      @ViewBag.SelectedSemester<br>
+      <span style="font-size:16px;color:#fff;">ITEMS</span>
+    </div>
+    <div style="text-align:center;position:absolute;left:50%;transform:translateX(-50%);top:20px;">
+      <span style="font-size:48px;font-weight:900;line-height:1;">@termAvg</span>
+      <span style="font-size:11px;font-weight:700;letter-spacing:.6px;color:#aaa;display:block;margin-top:-2px;">TERM AVERAGE</span>
+    </div>
+    <div></div>
+  </div>
+
+  <!-- WORSE / BETTER labels -->
+  <div style="display:flex;justify-content:space-between;font-size:10px;color:#aaa;font-weight:700;letter-spacing:.6px;margin-bottom:6px;">
+    <span>◄ WORSE</span>
+    <span>BETTER ►</span>
+  </div>
+
+  <!-- Chart area -->
+  <div style="display:flex;gap:0;height:160px;align-items:flex-end;position:relative;padding-left:32px;">
+
+    <!-- Y-axis label -->
+    <div style="position:absolute;left:0;top:50%;transform:translateY(-50%) rotate(-90deg);font-size:8px;color:#aaa;letter-spacing:.5px;font-weight:700;white-space:nowrap;transform-origin:center;">
+      COUNT OF TITLES IN RANGE
+    </div>
+
+    @for (int i = 0; i < 10; i++)
+    {
+      // Position the term-average dotted line (score 0-99 spread across 10 bins)
+      // The average marker falls between bins; avg/10 gives the bin index (0-9)
+      double barHeightPct = (double)bins[i] / maxBin * 100.0;
+      bool isAvgBin = (termAvg / 10) == i;
+
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;position:relative;">
+
+        @if (isAvgBin)
+        {
+          <!-- Dotted average line -->
+          <div style="position:absolute;top:0;bottom:0;left:50%;width:2px;
+                      border-left:2px dotted #fff;transform:translateX(-50%);z-index:2;"></div>
+        }
+
+        <!-- Bar -->
+        <div style="width:80%;background:@(barHeightPct > 0 ? "#2196f3" : "#444");
+                    height:@(barHeightPct > 0 ? barHeightPct : 2)%;
+                    border-radius:2px 2px 0 0;position:relative;z-index:1;
+                    min-height:4px;margin-top:auto;">
+        </div>
+      </div>
+    }
+  </div>
+
+  <!-- X-axis labels -->
+  <div style="display:flex;gap:0;padding-left:32px;margin-top:4px;">
+    @foreach (var lbl in labels)
+    {
+      <div style="flex:1;text-align:center;font-size:9px;color:#aaa;font-weight:600;">@lbl</div>
+    }
+  </div>
+
+  <!-- X-axis title -->
+  <div style="text-align:center;font-size:9px;color:#aaa;font-weight:700;letter-spacing:.5px;margin-top:8px;text-transform:uppercase;">
+    Range of Affordability Score Points &nbsp;|&nbsp; Medium = $40 (score 50) &nbsp;|&nbsp; $60+ triggers professor alert
+  </div>
+</div>
+
 @if (!Model.Any())
 {
   <div class="alert alert-info mt-3">
