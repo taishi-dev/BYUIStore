@@ -74,6 +74,7 @@ public class ApiController : ControllerBase
             digitalGoogle      = result.EbookAvailableOnGoogle,
             googlePrice        = result.EbookPrice,
             printPrice         = result.PrintRetailPrice ?? result.PrintListPrice,
+            vitalSourcePrice   = result.VitalSourcePrice,
             amazonUrl          = result.AmazonUrl,
             vitalsourceUrl     = result.VitalSourceUrl,
             googleBuyLink      = result.GoogleBuyLink,

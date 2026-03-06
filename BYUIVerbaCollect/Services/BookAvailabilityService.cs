@@ -150,24 +150,207 @@ public class BookAvailabilityService
     {
         try
         {
-            var url = $"https://www.vitalsource.com/search?term={Uri.EscapeDataString(isbn)}";
-            var req = new HttpRequestMessage(HttpMethod.Get, url);
-            req.Headers.Add("User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
-            req.Headers.Add("Accept", "text/html");
+            // ── Step 1: Search page — confirms the book exists on VitalSource ──────
+            var searchUrl = $"https://www.vitalsource.com/search?term={Uri.EscapeDataString(isbn)}";
+            var searchReq = new HttpRequestMessage(HttpMethod.Get, searchUrl);
+            searchReq.Headers.Add("User-Agent",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+            searchReq.Headers.Add("Accept", "text/html,application/xhtml+xml");
+            searchReq.Headers.Add("Accept-Language", "en-US,en;q=0.9");
 
-            var resp = await http.SendAsync(req);
-            if (!resp.IsSuccessStatusCode) return;
+            var searchResp = await http.SendAsync(searchReq);
+            if (!searchResp.IsSuccessStatusCode) return;
 
-            var html = await resp.Content.ReadAsStringAsync();
-            item.DigitalAvailableOnVitalSource =
-                html.Contains("vitalsource.com/products/", StringComparison.OrdinalIgnoreCase)
-                && !html.Contains("No results found", StringComparison.OrdinalIgnoreCase);
+            var searchHtml = await searchResp.Content.ReadAsStringAsync();
+            bool found = searchHtml.Contains("vitalsource.com/products/", StringComparison.OrdinalIgnoreCase)
+                      && !searchHtml.Contains("No results found", StringComparison.OrdinalIgnoreCase);
+
+            item.DigitalAvailableOnVitalSource = found;
+            if (!found) return;
+
+            // ── Step 2: Extract the product page URL from the search results ────────
+            // VitalSource VBID = "v" + ISBN13 (no dashes), e.g. v9780547750149
+            var vbid  = "v" + isbn;
+            string? productUrl = null;
+
+            // 2a: Search the __NEXT_DATA__ JSON blob for a path containing the VBID
+            var nextDataSearchMatch = System.Text.RegularExpressions.Regex.Match(searchHtml,
+                @"<script id=""__NEXT_DATA__""[^>]*>([\s\S]*?)</script>",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (nextDataSearchMatch.Success)
+            {
+                // Look for VBID anywhere in the JSON blob (may be URL-encoded or not)
+                var pathInJson = System.Text.RegularExpressions.Regex.Match(
+                    nextDataSearchMatch.Groups[1].Value,
+                    $@"""(/products/[^""]*?{System.Text.RegularExpressions.Regex.Escape(vbid)}[^""]*?)""",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (pathInJson.Success)
+                    productUrl = "https://www.vitalsource.com" + pathInJson.Groups[1].Value;
+            }
+
+            // 2b: Try href attributes in the raw HTML
+            if (productUrl is null)
+            {
+                var hrefMatch = System.Text.RegularExpressions.Regex.Match(searchHtml,
+                    $@"href=[""'](/products/[^""']*?{System.Text.RegularExpressions.Regex.Escape(vbid)}[^""']*?)[""']",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (hrefMatch.Success)
+                    productUrl = "https://www.vitalsource.com" + hrefMatch.Groups[1].Value;
+            }
+
+            // 2c: Try any JSON string that contains the ISBN digits (VS sometimes omits 'v' prefix)
+            if (productUrl is null)
+            {
+                var loosePath = System.Text.RegularExpressions.Regex.Match(searchHtml,
+                    $@"""(/products/[^""]*?{System.Text.RegularExpressions.Regex.Escape(isbn)}[^""]*?)""",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (loosePath.Success)
+                    productUrl = "https://www.vitalsource.com" + loosePath.Groups[1].Value;
+            }
+
+            // 2d: Hard-coded fallback path that VitalSource accepts via redirect
+            productUrl ??= $"https://www.vitalsource.com/search?term={Uri.EscapeDataString(isbn)}";
+
+            // ── Step 3: Fetch product page → parse 120-day rental price ──────────
+            item.VitalSourcePrice = await FetchVs120DayPriceAsync(http, productUrl, isbn);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "VitalSource check failed for ISBN {Isbn}", isbn);
         }
+    }
+
+    /// <summary>
+    /// Fetches a VitalSource product page and returns the 120-day rental price.
+    /// Tries __NEXT_DATA__ JSON first (most reliable), then regex fallbacks.
+    /// </summary>
+    private async Task<decimal?> FetchVs120DayPriceAsync(HttpClient http, string productUrl, string isbn)
+    {
+        try
+        {
+            var req = new HttpRequestMessage(HttpMethod.Get, productUrl);
+            req.Headers.Add("User-Agent",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+            req.Headers.Add("Accept", "text/html,application/xhtml+xml");
+            req.Headers.Add("Accept-Language", "en-US,en;q=0.9");
+
+            var resp = await http.SendAsync(req);
+            if (!resp.IsSuccessStatusCode) return null;
+
+            var html = await resp.Content.ReadAsStringAsync();
+
+            // ── Try 1: Walk the Next.js __NEXT_DATA__ JSON for 120-day license ──
+            var nextDataMatch = System.Text.RegularExpressions.Regex.Match(html,
+                @"<script id=""__NEXT_DATA__""[^>]*>([\s\S]*?)</script>",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (nextDataMatch.Success)
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(nextDataMatch.Groups[1].Value);
+                    var price = FindVs120DayPriceInJson(doc.RootElement);
+                    if (price.HasValue) return price;
+                }
+                catch { /* JSON parse error — fall through */ }
+            }
+
+            // ── Try 2: "120" token close to a "$X.XX" price ──────────────────────
+            var mA = System.Text.RegularExpressions.Regex.Match(html,
+                @"120\s*[-–]?\s*[Dd]ay[s]?[^$\d]{0,200}\$(\d{1,4}\.\d{2})",
+                System.Text.RegularExpressions.RegexOptions.Singleline);
+            if (mA.Success && decimal.TryParse(mA.Groups[1].Value,
+                System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var pA))
+                return pA;
+
+            var mB = System.Text.RegularExpressions.Regex.Match(html,
+                @"\$(\d{1,4}\.\d{2})[^$\d]{0,200}120\s*[-–]?\s*[Dd]ay[s]?",
+                System.Text.RegularExpressions.RegexOptions.Singleline);
+            if (mB.Success && decimal.TryParse(mB.Groups[1].Value,
+                System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var pB))
+                return pB;
+
+            // ── Try 3: First JSON "price":"X.XX" on the product page ─────────────
+            var mJ = System.Text.RegularExpressions.Regex.Match(html,
+                @"""price""\s*:\s*""?(\d{1,4}(?:\.\d{1,2})?)""?",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (mJ.Success && decimal.TryParse(mJ.Groups[1].Value,
+                System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var pJ))
+                return pJ;
+
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "VitalSource product page fetch failed for {Url}", productUrl);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Recursively walks parsed Next.js __NEXT_DATA__ JSON to find a license object
+    /// that has duration == 120 (days) and a price/amount field.
+    /// </summary>
+    private static decimal? FindVs120DayPriceInJson(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            bool has120 = false;
+            decimal? price = null;
+
+            foreach (var prop in element.EnumerateObject())
+            {
+                var key = prop.Name.ToLowerInvariant();
+
+                // Detect duration = 120 days
+                if (key is "duration" or "days" or "numdays" or "num_days" or "licenselength")
+                {
+                    if (prop.Value.ValueKind == JsonValueKind.Number)
+                    {
+                        try { if (prop.Value.GetInt32() == 120) has120 = true; } catch { }
+                    }
+                    else if (prop.Value.ValueKind == JsonValueKind.String)
+                    {
+                        if (prop.Value.GetString() is "120") has120 = true;
+                    }
+                }
+
+                // Detect price field
+                if (key is "price" or "amount" or "retail_price" or "retailprice" or "listprice" or "list_price")
+                {
+                    if (prop.Value.ValueKind == JsonValueKind.Number)
+                    {
+                        try { price = prop.Value.GetDecimal(); } catch { }
+                    }
+                    else if (prop.Value.ValueKind == JsonValueKind.String &&
+                             decimal.TryParse(prop.Value.GetString(),
+                                 System.Globalization.NumberStyles.Any,
+                                 System.Globalization.CultureInfo.InvariantCulture, out var sp))
+                        price = sp;
+                }
+            }
+
+            if (has120 && price.HasValue && price.Value >= 1m)
+                return price;
+
+            // Recurse
+            foreach (var prop in element.EnumerateObject())
+            {
+                var found = FindVs120DayPriceInJson(prop.Value);
+                if (found.HasValue) return found;
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var child in element.EnumerateArray())
+            {
+                var found = FindVs120DayPriceInJson(child);
+                if (found.HasValue) return found;
+            }
+        }
+        return null;
     }
 
     private static string Str(JsonElement el, string key) =>
@@ -301,6 +484,8 @@ public class BookAvailabilityItem
     public decimal? EbookPrice                    { get; set; }
     public bool     DigitalAvailableOnVitalSource { get; set; }
     public string   VitalSourceUrl               { get; set; } = "";
+    /// <summary>Scraped 120-day rental price from VitalSource search results page.</summary>
+    public decimal? VitalSourcePrice             { get; set; }
 
     public int?    PageCount         { get; set; }
     public string? CoverThumbnailUrl { get; set; }

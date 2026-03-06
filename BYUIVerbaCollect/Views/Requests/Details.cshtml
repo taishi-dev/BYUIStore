@@ -1237,20 +1237,27 @@ document.querySelectorAll('.mat-ia-flag[data-isbn]').forEach(async el => {
       applyCheckmark(el);
     }
 
-    // ── HAS IA PRICE (VitalSource or Amazon price found) ─────────────────
-    const priceVal  = data.printPrice || data.googlePrice;
-    const hasPrice  = !!(priceVal || data.digitalGoogle);
+    // ── HAS IA PRICE ─────────────────────────────────────────────────────
+    // VitalSource = IA platform → vitalSourcePrice counts as IA price
+    const priceVal  = data.vitalSourcePrice || data.printPrice || data.googlePrice;
+    const hasPrice  = !!(priceVal || data.digitalVitalSource || data.digitalGoogle);
     const priceFlag = el.closest('.mat-ia-flags-row')?.querySelector('[data-isbn-price]');
     if (priceFlag && hasPrice) {
       applyCheckmark(priceFlag);
     }
 
     // ── LIST PRICE line below PUBLICATION DATE ────────────────────────────
+    // Priority: VitalSource 120-day rental price > Google/Amazon print price
     const itemId   = el.dataset.itemId;
     const priceDiv = itemId ? document.getElementById('mat-price-' + itemId) : null;
-    if (priceDiv && priceVal) {
-      priceDiv.textContent = 'LIST PRICE: $' + parseFloat(priceVal).toFixed(2);
-      priceDiv.style.display = '';
+    if (priceDiv) {
+      if (data.vitalSourcePrice) {
+        priceDiv.textContent = 'LIST PRICE: $' + parseFloat(data.vitalSourcePrice).toFixed(2) + ' (120-day rental)';
+        priceDiv.style.display = '';
+      } else if (priceVal) {
+        priceDiv.textContent = 'LIST PRICE: $' + parseFloat(priceVal).toFixed(2);
+        priceDiv.style.display = '';
+      }
     }
   } catch(e) { /* silent — availability check is best-effort */ }
 });
