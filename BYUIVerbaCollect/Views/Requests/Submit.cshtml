@@ -188,7 +188,7 @@ function addBook() {
                     </svg>DIGITAL MATCH
                   </span>
                 </div>
-                <div class="row g-2">
+              <div class="row g-2">
                   <div class="col-md-6">
                     <small class="text-muted d-block">Author</small>
                     <span id="conf_author_${idx}"></span>
@@ -208,6 +208,32 @@ function addBook() {
                   <div class="col-md-4">
                     <small class="text-muted d-block">Year</small>
                     <span id="conf_year_${idx}"></span>
+                  </div>
+                  <!-- Digital match badge (shown when VitalSource confirms digital) -->
+                  <div class="col-12 d-none" id="conf_digital_wrap_${idx}">
+                    <div style="display:inline-flex;flex-wrap:wrap;gap:8px;align-items:center;">
+                      <!-- Badge 1: DIGITAL MATCH ✓ -->
+                      <div style="background:#e8f5e9;border:2px solid #43a047;border-radius:20px;
+                                  padding:5px 14px;display:inline-flex;align-items:center;gap:6px;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                             fill="none" stroke="#2e7d32" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                        <span style="font-size:12px;font-weight:800;color:#2e7d32;letter-spacing:.04em;">DIGITAL MATCH</span>
+                      </div>
+                      <!-- Badge 2: HAS IA PRICE ✓ (only when price available) -->
+                      <div id="conf_ia_price_wrap_${idx}" class="d-none"
+                           style="background:#e3f2fd;border:2px solid #1565c0;border-radius:20px;
+                                  padding:5px 14px;display:inline-flex;align-items:center;gap:6px;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                             fill="none" stroke="#1565c0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                        <span style="font-size:12px;font-weight:800;color:#1565c0;letter-spacing:.04em;">HAS IA PRICE</span>
+                        <span style="font-size:11px;color:#555;">eTextbook License:</span>
+                        <strong id="conf_vs_price_${idx}" style="color:#1565c0;font-size:14px;"></strong>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -342,8 +368,8 @@ async function lookupByIsbn(idx) {
       return;
     }
 
-    const book = await res.json();
-    showConfirmation(idx, book);
+    // /api/isbn-direct now includes vitalSourcePrice + vitalSourceUrl directly
+    showConfirmation(idx, await res.json());
   } catch(e) {
     document.getElementById(`isbnSpinner_${idx}`).classList.add('d-none');
     showIsbnError(idx, 'Network error. Please check your connection.');
@@ -464,9 +490,34 @@ function showConfirmation(idx, book) {
     }
   }
 
-  // eBook / digital badge — shown when book was found on VitalSource
+  // ── eBook title badge (inline next to title) ──
   const ebookBadge = document.getElementById(`conf_ebook_badge_${idx}`);
   if (ebookBadge) ebookBadge.classList.toggle('d-none', !book.digitalOnVitalSource);
+
+  // ── DIGITAL MATCH + HAS IA PRICE badges row ──
+  const digitalWrap  = document.getElementById(`conf_digital_wrap_${idx}`);
+  const iaPriceWrap  = document.getElementById(`conf_ia_price_wrap_${idx}`);
+  const vsPriceEl    = document.getElementById(`conf_vs_price_${idx}`);
+
+  if (digitalWrap) {
+    if (book.digitalOnVitalSource) {
+      digitalWrap.classList.remove('d-none');
+
+      // IA price badge
+      const rawPrice = book.vitalSourcePrice ?? book.vitalsourcePrice ?? null;
+      if (iaPriceWrap && vsPriceEl && rawPrice != null && Number(rawPrice) > 0) {
+        setText(`conf_vs_price_${idx}`, `$${Number(rawPrice).toFixed(2)}`);
+        iaPriceWrap.classList.remove('d-none');
+        iaPriceWrap.style.display = 'inline-flex';
+      } else if (iaPriceWrap) {
+        iaPriceWrap.classList.add('d-none');
+        iaPriceWrap.style.display = 'none';
+      }
+    } else {
+      digitalWrap.classList.add('d-none');
+      if (iaPriceWrap) { iaPriceWrap.classList.add('d-none'); iaPriceWrap.style.display = 'none'; }
+    }
+  }
 
   // Store book data and show panel
   const panel = document.getElementById(`confirmPanel_${idx}`);

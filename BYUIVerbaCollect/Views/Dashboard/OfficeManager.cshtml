@@ -111,10 +111,18 @@
             <td>@req.Semester</td>
             <td><span class="badge status-badge-@req.Status.ToString().ToLower()">@req.Status.ToString().SplitCamelCase()</span></td>
             <td class="small text-muted">@req.SubmittedAt.ToString("MMM d, yyyy")</td>
-            <td>
-              <a asp-controller="Requests" asp-action="Details" asp-route-id="@req.Id"
-                 class="btn btn-outline-byui btn-sm"><i class="bi bi-eye me-1"></i>View</a>
-            </td>
+              <td class="d-flex gap-1 flex-wrap">
+                <a asp-controller="Requests" asp-action="Details" asp-route-id="@req.Id"
+                   class="btn btn-outline-byui btn-sm"><i class="bi bi-eye me-1"></i>View</a>
+                <form method="post" asp-controller="Requests" asp-action="DeleteRequest"
+                      asp-route-id="@req.Id" style="display:inline;margin:0;"
+                      onsubmit="return confirm('Delete course request #@req.Id (@req.CourseNumber)?\nThis cannot be undone.')">
+                  @Html.AntiForgeryToken()
+                  <button type="submit" class="btn btn-outline-danger btn-sm">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+              </td>
           </tr>
         }
       </tbody>

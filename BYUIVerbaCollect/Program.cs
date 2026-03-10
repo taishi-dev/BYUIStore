@@ -45,6 +45,9 @@ builder.Services.AddScoped<BookAvailabilityService>();
 // ── Email notifications (Material Manager auto-emails) ────────────────────
 builder.Services.AddScoped<IEmailService, EmailService>();
 
+// ── In-memory cache (ISBN availability results, 24-hour TTL) ──────────────
+builder.Services.AddMemoryCache();
+
 // ── MVC ────────────────────────────────────────────────────────────────────
 builder.Services.AddControllersWithViews();
 

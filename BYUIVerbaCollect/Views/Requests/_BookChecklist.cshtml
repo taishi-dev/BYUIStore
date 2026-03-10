@@ -35,9 +35,10 @@
       <!-- Book header bar -->
       <div style="padding:10px 16px; background:#f8f9fc; display:flex; align-items:center; gap:12px;">
         <div id="clThumb_@item.Isbn"
-             style="width:34px; height:46px; background:#dee2e6; border-radius:3px;
-                    flex-shrink:0; overflow:hidden; display:flex; align-items:center; justify-content:center;">
-          <i class="bi bi-book text-muted" style="font-size:14px;"></i>
+             style="width:80px; height:110px; background:#dee2e6; border-radius:4px;
+                    flex-shrink:0; overflow:hidden; display:flex; align-items:center; justify-content:center;
+                    border:1px solid #c8cdd2; box-shadow:0 1px 4px rgba(0,0,0,.1);">
+          <i class="bi bi-book text-muted" style="font-size:22px;"></i>
         </div>
         <div style="flex:1; min-width:0;">
           <div style="font-weight:700; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
@@ -256,7 +257,10 @@ async function runBookCheck(row) {
     if (d.coverThumbnail) {
       const thumb = document.getElementById(`clThumb_${isbn}`);
       if (thumb) thumb.innerHTML =
-        `<img src="${d.coverThumbnail}" style="width:100%;height:100%;object-fit:cover;" alt="Cover"/>`;
+        `<img src="${d.coverThumbnail}"
+              style="width:100%;height:100%;object-fit:cover;"
+              alt="Cover"
+              onerror="this.parentElement.innerHTML='<i class=\\'bi bi-book text-muted\\' style=\\'font-size:22px;\\'></i>'"/>`;
     }
 
     // ── Overall status badge ─────────────────────────────────────────────

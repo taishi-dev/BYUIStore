@@ -890,6 +890,19 @@ function secAddBook() {
               <div><span style="color:#667;">Publisher:</span> <span id="secConfPublisher_${idx}"></span></div>
               <div><span style="color:#667;">Edition:</span> <span id="secConfEdition_${idx}"></span></div>
               <div><span style="color:#667;">Year:</span> <span id="secConfYear_${idx}"></span></div>
+              <!-- License fee row — shown only when VitalSource returns a price -->
+              <div id="secConfLicenseFeeWrap_${idx}" class="d-none"
+                   style="grid-column:1/-1;margin-top:4px;padding:5px 8px;
+                          background:#e3f2fd;border:1px solid #90caf9;border-radius:4px;
+                          display:flex;align-items:center;gap:8px;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
+                     fill="none" stroke="#1565c0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <span style="font-size:10px;font-weight:800;color:#1565c0;letter-spacing:.04em;">DIGITAL</span>
+                <span style="font-size:10px;color:#556;">eTextbook License Fee:</span>
+                <strong id="secConfLicenseFeeText_${idx}" style="color:#1565c0;font-size:12px;"></strong>
+              </div>
             </div>
           </div>
           <div style="padding:6px 10px;background:#eaf7ed;display:flex;gap:6px;">
@@ -1140,6 +1153,23 @@ function secShowConfirmation(idx, book) {
   const cacheTag = document.getElementById(`secCacheTag_${idx}`);
   if (cacheTag) cacheTag.classList.toggle('d-none', !book.fromLocalCache);
 
+  // ── License fee row (shown when VitalSource found a price) ─────────────
+  const feeWrap = document.getElementById(`secConfLicenseFeeWrap_${idx}`);
+  const feeTxt  = document.getElementById(`secConfLicenseFeeText_${idx}`);
+  if (feeWrap && feeTxt) {
+    const rawPrice = book.vitalSourcePrice ?? book.vitalsourcePrice ?? null;
+    const days     = book.vitalSourcePriceDays ?? book.vitalsourcePriceDays ?? null;
+    if (book.digitalOnVitalSource && rawPrice != null && Number(rawPrice) > 0) {
+      const daysLabel = days ? ` (${days}-day rental)` : '';
+      feeTxt.textContent = `$${Number(rawPrice).toFixed(2)}${daysLabel}`;
+      feeWrap.classList.remove('d-none');
+      feeWrap.style.display = 'flex';
+    } else {
+      feeWrap.classList.add('d-none');
+      feeWrap.style.display = 'none';
+    }
+  }
+
   const panel = document.getElementById(`secConfirmPanel_${idx}`);
   if (panel) { panel._bookData = book; panel.classList.remove('d-none'); }
 }
@@ -1205,8 +1235,14 @@ document.getElementById('addSectionModal')?.addEventListener('hidden.bs.modal', 
 });
 
 // ═══════════════════════════════════════════════════════════════
-//  DIGITAL MATCH — auto-check VitalSource for each book on load
+//  DIGITAL MATCH — instant checkmarks from server cache,
+//                  async API fetch only for uncached ISBNs
 // ═══════════════════════════════════════════════════════════════
+
+// Pre-loaded from server (IMemoryCache) — instant, no network call.
+// Keys are normalised ISBNs (digits only, no dashes).
+const serverCache = @Html.Raw(ViewBag.AvailabilityCache ?? "{}");
+
 const CHECKMARK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
   viewBox="0 0 24 24" fill="none" stroke="#2e7d32" stroke-width="3"
   stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;">
@@ -1224,41 +1260,54 @@ function applyCheckmark(el) {
   el.style.fontWeight = '700';
 }
 
+function applyAvailData(el, data) {
+  // ── DIGITAL MATCH (VitalSource hit = digital book 100%) ──────────────
+  if (data.digitalVitalSource) {
+    applyCheckmark(el);
+  }
+
+  // ── HAS IA PRICE ─────────────────────────────────────────────────────
+  const priceVal  = data.vitalSourcePrice || data.printPrice || data.googlePrice;
+  const hasPrice  = !!(priceVal || data.digitalVitalSource || data.digitalGoogle);
+  const priceFlag = el.closest('.mat-ia-flags-row')?.querySelector('[data-isbn-price]');
+  if (priceFlag && hasPrice) {
+    applyCheckmark(priceFlag);
+  }
+
+  // ── LIST PRICE line below PUBLICATION DATE ────────────────────────────
+  const itemId   = el.dataset.itemId;
+  const priceDiv = itemId ? document.getElementById('mat-price-' + itemId) : null;
+  if (priceDiv) {
+    if (data.vitalSourcePrice) {
+      priceDiv.textContent = 'LIST PRICE: $' + parseFloat(data.vitalSourcePrice).toFixed(2) + ' (120-day rental)';
+      priceDiv.style.display = '';
+    } else if (priceVal) {
+      priceDiv.textContent = 'LIST PRICE: $' + parseFloat(priceVal).toFixed(2);
+      priceDiv.style.display = '';
+    }
+  }
+}
+
 document.querySelectorAll('.mat-ia-flag[data-isbn]').forEach(async el => {
-  const isbn = el.dataset.isbn;
+  const rawIsbn = el.dataset.isbn || '';
+  // Normalise ISBN: strip dashes/spaces so it matches the cache key
+  const isbn = rawIsbn.replace(/[-\s]/g, '');
   if (!isbn) return;
+
+  // ── Fast path: serve from server-side cache (instant, no network) ────
+  if (serverCache[isbn]) {
+    applyAvailData(el, serverCache[isbn]);
+    return; // done — no async fetch needed
+  }
+
+  // ── Slow path: ISBN not yet cached — fetch from API, then cache ─────
   try {
     const resp = await fetch('/api/check-availability?isbn=' + encodeURIComponent(isbn));
     if (!resp.ok) return;
     const data = await resp.json();
-
-    // ── DIGITAL MATCH (VitalSource hit = digital book 100%) ──────────────
-    if (data.digitalVitalSource) {
-      applyCheckmark(el);
-    }
-
-    // ── HAS IA PRICE ─────────────────────────────────────────────────────
-    // VitalSource = IA platform → vitalSourcePrice counts as IA price
-    const priceVal  = data.vitalSourcePrice || data.printPrice || data.googlePrice;
-    const hasPrice  = !!(priceVal || data.digitalVitalSource || data.digitalGoogle);
-    const priceFlag = el.closest('.mat-ia-flags-row')?.querySelector('[data-isbn-price]');
-    if (priceFlag && hasPrice) {
-      applyCheckmark(priceFlag);
-    }
-
-    // ── LIST PRICE line below PUBLICATION DATE ────────────────────────────
-    // Priority: VitalSource 120-day rental price > Google/Amazon print price
-    const itemId   = el.dataset.itemId;
-    const priceDiv = itemId ? document.getElementById('mat-price-' + itemId) : null;
-    if (priceDiv) {
-      if (data.vitalSourcePrice) {
-        priceDiv.textContent = 'LIST PRICE: $' + parseFloat(data.vitalSourcePrice).toFixed(2) + ' (120-day rental)';
-        priceDiv.style.display = '';
-      } else if (priceVal) {
-        priceDiv.textContent = 'LIST PRICE: $' + parseFloat(priceVal).toFixed(2);
-        priceDiv.style.display = '';
-      }
-    }
+    // Store in local JS cache so navigating within the same page session is fast
+    serverCache[isbn] = data;
+    applyAvailData(el, data);
   } catch(e) { /* silent — availability check is best-effort */ }
 });
 </script>

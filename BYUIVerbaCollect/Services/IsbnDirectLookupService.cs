@@ -34,16 +34,20 @@ public class IsbnDirectLookupService
         isbn = isbn.Trim().Replace("-", "").Replace(" ", "");
         if (string.IsNullOrEmpty(isbn)) return null;
 
+        var http = _httpFactory.CreateClient("GoogleBooks");
+
         // ── 1. Local DB cache ─────────────────────────────────────────────
         var cached = await _db.CourseBookAssignments
             .AsNoTracking()
             .Where(b => b.Isbn == isbn)
             .FirstOrDefaultAsync();
 
+        IsbnLookupResult? result = null;
+
         if (cached != null)
         {
             _logger.LogInformation("ISBN {Isbn} found in local catalog.", isbn);
-            return new IsbnLookupResult
+            result = new IsbnLookupResult
             {
                 Isbn = cached.Isbn, Title = cached.Title ?? "", Author = cached.Author ?? "",
                 Publisher = cached.Publisher ?? "", Edition = cached.Edition ?? "",
@@ -51,22 +55,51 @@ public class IsbnDirectLookupService
             };
         }
 
-        var http = _httpFactory.CreateClient("GoogleBooks");
+        // ── Start VitalSource check in background (runs in parallel with OL/Google) ──
+        // VitalSource = digital confirmed + price. Always needed regardless of metadata source.
+        var vsTask = TryVitalSourceAsync(isbn, http);
 
         // ── 2. Open Library (best for academic/textbooks, no rate limits) ─
-        var olResult = await TryOpenLibraryAsync(isbn, http);
-        if (olResult != null && !string.IsNullOrEmpty(olResult.Title))
-            return olResult;
+        if (result == null)
+        {
+            var olResult = await TryOpenLibraryAsync(isbn, http);
+            if (olResult != null && !string.IsNullOrEmpty(olResult.Title))
+                result = olResult;
+        }
 
         // ── 3. Google Books ──────────────────────────────────────────────
-        var gbResult = await TryGoogleBooksAsync(isbn, http);
-        if (gbResult != null && !string.IsNullOrEmpty(gbResult.Title))
-            return gbResult;
+        if (result == null)
+        {
+            var gbResult = await TryGoogleBooksAsync(isbn, http);
+            if (gbResult != null && !string.IsNullOrEmpty(gbResult.Title))
+                result = gbResult;
+        }
 
-        // ── 4. VitalSource catalog page ──────────────────────────────────
-        var vsResult = await TryVitalSourceAsync(isbn, http);
-        if (vsResult != null && !string.IsNullOrEmpty(vsResult.Title))
-            return vsResult;
+        // ── 4. Await VitalSource result ───────────────────────────────────
+
+        if (result == null)
+        {
+            // VitalSource is our last metadata source too
+            var vsResult = await vsTask;
+            if (vsResult != null && !string.IsNullOrEmpty(vsResult.Title))
+                return vsResult;   // already has DigitalOnVitalSource=true and price
+        }
+        else
+        {
+            // Merge VitalSource digital info into metadata from another source
+            var vsResult = await vsTask;
+            if (vsResult != null)
+            {
+                result.DigitalOnVitalSource  = true;
+                result.VitalSourcePrice      = vsResult.VitalSourcePrice;
+                result.VitalSourcePriceDays  = vsResult.VitalSourcePriceDays;
+                result.VitalSourceUrl        = vsResult.VitalSourceUrl;
+                // Fill in cover if the primary source didn't have one
+                if (string.IsNullOrEmpty(result.CoverThumbnail) && !string.IsNullOrEmpty(vsResult.CoverThumbnail))
+                    result.CoverThumbnail = vsResult.CoverThumbnail;
+            }
+            return result;
+        }
 
         // ── Nothing found – return null so user can fill manually ─────────
         _logger.LogWarning("ISBN {Isbn} not found in any external source.", isbn);
@@ -205,11 +238,50 @@ public class IsbnDirectLookupService
                 $"https://www.vitalsource.com/search?term={Uri.EscapeDataString(isbn)}", http);
             if (searchHtml == null) return null;
 
+            // Match both relative href="/products/..." AND absolute href="https://www.vitalsource.com/products/..."
             var productPath = System.Text.RegularExpressions.Regex.Match(
                 searchHtml,
-                @"href=""(/products/[^""?#]+)""",
+                @"href=""(?:https://www\.vitalsource\.com)?(/products/[^""?#]+)""",
                 System.Text.RegularExpressions.RegexOptions.IgnoreCase)
                 .Groups[1].Value;
+
+            // ── Fallback A: scan __NEXT_DATA__ JSON for a /products/ path ─
+            if (string.IsNullOrEmpty(productPath))
+            {
+                var ndMatch = System.Text.RegularExpressions.Regex.Match(searchHtml,
+                    @"<script id=""__NEXT_DATA__""[^>]*>([\s\S]*?)</script>",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (ndMatch.Success)
+                {
+                    // Look for any /products/... path containing the ISBN digits
+                    var pathM = System.Text.RegularExpressions.Regex.Match(
+                        ndMatch.Groups[1].Value,
+                        @"""(/products/[^""?#]+)""",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (pathM.Success)
+                        productPath = pathM.Groups[1].Value;
+                }
+            }
+
+            // ── Fallback B: direct VBID URL (VitalSource redirects v+ISBN13) ─
+            string? productHtml = null;
+            if (string.IsNullOrEmpty(productPath))
+            {
+                var vbidUrl = $"https://www.vitalsource.com/products/v{isbn}";
+                var vbidHtml = await FetchHtmlAsync(vbidUrl, http);
+                if (vbidHtml != null)
+                {
+                    var ogTitle = ExtractOgContent(vbidHtml, "og:title") ?? "";
+                    if (!string.IsNullOrWhiteSpace(ogTitle) &&
+                        !ogTitle.Contains("search", StringComparison.OrdinalIgnoreCase) &&
+                        !ogTitle.Contains("vitalsource bookshelf", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Confirmed real product page
+                        productPath = $"/products/v{isbn}";
+                        productHtml = vbidHtml;   // reuse — don't fetch twice
+                    }
+                }
+            }
 
             if (string.IsNullOrEmpty(productPath))
             {
@@ -217,8 +289,8 @@ public class IsbnDirectLookupService
                 return null;
             }
 
-            // ── Step 2: fetch product detail page ─────────────────────────
-            var productHtml = await FetchHtmlAsync(
+            // ── Step 2: fetch product detail page (skip if already fetched via VBID) ─
+            productHtml ??= await FetchHtmlAsync(
                 "https://www.vitalsource.com" + productPath, http);
             if (productHtml == null) return null;
 
@@ -281,9 +353,81 @@ public class IsbnDirectLookupService
             // Cover from og:image
             var cover = ExtractOgContent(productHtml, "og:image") ?? "";
 
+            // ── Price extraction — prefer 120-day, fallback to 180-day ────
+            // VitalSource pages typically show rental tiers like:
+            //   "120 Days" near "$49.99"   or   "180 Days" near "$59.99"
+            // Strategy: scan for day-tagged prices first, then generic price.
+            decimal? price120 = null;
+            decimal? price180 = null;
+
+            // Helper: find $XX.XX within ~200 chars of a day-count mention
+            static decimal? FindPriceNearDays(string html, string dayPattern)
+            {
+                var m = System.Text.RegularExpressions.Regex.Match(html,
+                    dayPattern + @"[\s\S]{0,300}?\$(\d{1,4}\.\d{2})",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (m.Success && decimal.TryParse(m.Groups[1].Value,
+                    System.Globalization.NumberStyles.Any,
+                    System.Globalization.CultureInfo.InvariantCulture, out var val)
+                    && val > 0 && val < 1500) return val;
+
+                // Also try: price comes BEFORE the day label
+                m = System.Text.RegularExpressions.Regex.Match(html,
+                    @"\$(\d{1,4}\.\d{2})[\s\S]{0,300}?" + dayPattern,
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (m.Success && decimal.TryParse(m.Groups[1].Value,
+                    System.Globalization.NumberStyles.Any,
+                    System.Globalization.CultureInfo.InvariantCulture, out var val2)
+                    && val2 > 0 && val2 < 1500) return val2;
+
+                return null;
+            }
+
+            price120 = FindPriceNearDays(productHtml, @"120[\s-]?[Dd]ay");
+            price180 = FindPriceNearDays(productHtml, @"180[\s-]?[Dd]ay");
+
+            // Fallback: JSON-LD offers.price or first $XX.XX on the page
+            decimal? fallbackPrice = null;
+            var priceM = System.Text.RegularExpressions.Regex.Match(productHtml,
+                @"""offers""\s*:\s*\{[^}]*?""price""\s*:\s*[""']?(\d+(?:\.\d+)?)[""']?",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
+            if (priceM.Success && decimal.TryParse(priceM.Groups[1].Value,
+                System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var fp1))
+                fallbackPrice = fp1;
+
+            if (!fallbackPrice.HasValue)
+            {
+                priceM = System.Text.RegularExpressions.Regex.Match(productHtml,
+                    @"""price""\s*:\s*[""'](\d+(?:\.\d+)?)[""']",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (priceM.Success && decimal.TryParse(priceM.Groups[1].Value,
+                    System.Globalization.NumberStyles.Any,
+                    System.Globalization.CultureInfo.InvariantCulture, out var fp2))
+                    fallbackPrice = fp2;
+            }
+
+            if (!fallbackPrice.HasValue)
+            {
+                priceM = System.Text.RegularExpressions.Regex.Match(productHtml, @"\$(\d{1,4}\.\d{2})\b");
+                if (priceM.Success && decimal.TryParse(priceM.Groups[1].Value,
+                    System.Globalization.NumberStyles.Any,
+                    System.Globalization.CultureInfo.InvariantCulture, out var fp3)
+                    && fp3 > 0 && fp3 < 1500)
+                    fallbackPrice = fp3;
+            }
+
+            // Choose: 120-day preferred → 180-day → generic fallback
+            decimal? chosenPrice = price120 ?? price180 ?? fallbackPrice;
+            int?     chosenDays  = price120.HasValue ? 120 : price180.HasValue ? 180 : null;
+
+            var productUrl = "https://www.vitalsource.com" + productPath;
+
             _logger.LogInformation(
-                "VitalSource found ISBN {Isbn}: {Title} by {Author} ({Year})",
-                isbn, title, author, year);
+                "VitalSource found ISBN {Isbn}: {Title} by {Author} ({Year}) price={Price} ({Days}-day)",
+                isbn, title, author, year,
+                chosenPrice?.ToString("F2") ?? "n/a",
+                chosenDays?.ToString() ?? "?");
 
             return new IsbnLookupResult
             {
@@ -295,6 +439,9 @@ public class IsbnDirectLookupService
                 Year                 = year,
                 CoverThumbnail       = cover,
                 DigitalOnVitalSource = true,   // found on VitalSource = digital confirmed
+                VitalSourcePrice     = chosenPrice,
+                VitalSourcePriceDays = chosenDays,
+                VitalSourceUrl       = productUrl,
                 Source               = "VitalSource"
             };
         }
@@ -351,18 +498,24 @@ public class IsbnDirectLookupService
 
 public class IsbnLookupResult
 {
-    public string  Isbn                 { get; set; } = string.Empty;
-    public string  Title                { get; set; } = string.Empty;
-    public string  Author               { get; set; } = string.Empty;
-    public string  Publisher            { get; set; } = string.Empty;
-    public string  Edition              { get; set; } = string.Empty;
-    public int?    Year                 { get; set; }
+    public string   Isbn                 { get; set; } = string.Empty;
+    public string   Title                { get; set; } = string.Empty;
+    public string   Author               { get; set; } = string.Empty;
+    public string   Publisher            { get; set; } = string.Empty;
+    public string   Edition              { get; set; } = string.Empty;
+    public int?     Year                 { get; set; }
     /// <summary>Book cover thumbnail URL (Google Books / VitalSource og:image).</summary>
-    public string  CoverThumbnail       { get; set; } = string.Empty;
+    public string   CoverThumbnail       { get; set; } = string.Empty;
     /// <summary>True when VitalSource product page was found → digital eBook confirmed.</summary>
-    public bool    DigitalOnVitalSource { get; set; }
+    public bool     DigitalOnVitalSource { get; set; }
+    /// <summary>eTextbook rental price from VitalSource (null if not found). 120-day preferred over 180-day.</summary>
+    public decimal? VitalSourcePrice     { get; set; }
+    /// <summary>Rental period in days (120 or 180) that the price applies to. Null if not determined.</summary>
+    public int?     VitalSourcePriceDays { get; set; }
+    /// <summary>Direct URL to the VitalSource product page.</summary>
+    public string   VitalSourceUrl       { get; set; } = string.Empty;
     /// <summary>True = data came from the local database (previously approved book).</summary>
-    public bool    FromLocalCache       { get; set; }
+    public bool     FromLocalCache       { get; set; }
     /// <summary>"Open Library", "Google Books", "VitalSource", or "Local Catalog"</summary>
-    public string  Source               { get; set; } = string.Empty;
+    public string   Source               { get; set; } = string.Empty;
 }

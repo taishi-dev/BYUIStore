@@ -253,6 +253,17 @@
                       </a>
                     </li>
                   }
+                  <li><hr class="dropdown-divider"></li>
+                  <li>
+                    <form method="post" asp-controller="Requests" asp-action="DeleteRequest"
+                          asp-route-id="@req.Id" style="margin:0;"
+                          onsubmit="return confirm('Delete course request #@req.Id (@req.CourseNumber — @req.Semester)?\nThis cannot be undone.')">
+                      @Html.AntiForgeryToken()
+                      <button type="submit" class="dropdown-item text-danger">
+                        <i class="bi bi-trash me-2"></i>Delete Course
+                      </button>
+                    </form>
+                  </li>
                 </ul>
               </div>
             </div>

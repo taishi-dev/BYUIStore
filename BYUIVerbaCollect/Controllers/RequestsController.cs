@@ -1,10 +1,12 @@
 using BYUIVerbaCollect.Data;
 using BYUIVerbaCollect.Models;
+using BYUIVerbaCollect.Services;
 using BYUIVerbaCollect.ViewModels;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using System.Text.Json;
 
 namespace BYUIVerbaCollect.Controllers;
 
@@ -12,7 +14,13 @@ namespace BYUIVerbaCollect.Controllers;
 public class RequestsController : Controller
 {
     private readonly AppDbContext _db;
-    public RequestsController(AppDbContext db) => _db = db;
+    private readonly BookAvailabilityService _availService;
+
+    public RequestsController(AppDbContext db, BookAvailabilityService availService)
+    {
+        _db = db;
+        _availService = availService;
+    }
 
     private int CurrentUserId =>
         int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -125,6 +133,35 @@ public class RequestsController : Controller
             .ToListAsync();
 
         ViewBag.PreviousAdoptions = prevAdoptions;
+
+        // ── Pre-load availability cache so checkmarks render instantly ─────────
+        // For each book ISBN, check our in-memory cache (no network call).
+        // On cache hit the result is embedded in the HTML as a JS object so the
+        // browser can apply checkmarks immediately — before any async fetch fires.
+        var cachedAvail = new Dictionary<string, object>();
+        foreach (var item in req.Items.Where(i => i.ItemType == ItemType.Book
+                                                   && !string.IsNullOrWhiteSpace(i.Isbn)))
+        {
+            var isbn = item.Isbn!.Replace("-", "").Trim();
+            var cached = _availService.TryGetFromCache(isbn);
+            if (cached is not null)
+            {
+                cachedAvail[isbn] = new
+                {
+                    digitalVitalSource = cached.DigitalAvailableOnVitalSource,
+                    digitalGoogle      = cached.EbookAvailableOnGoogle,
+                    googlePrice        = cached.EbookPrice,
+                    printPrice         = cached.PrintRetailPrice ?? cached.PrintListPrice,
+                    vitalSourcePrice   = cached.VitalSourcePrice,
+                    amazonUrl          = cached.AmazonUrl,
+                    vitalsourceUrl     = cached.VitalSourceUrl,
+                    googleBuyLink      = cached.GoogleBuyLink,
+                    coverThumbnail     = cached.CoverThumbnailUrl
+                };
+            }
+        }
+
+        ViewBag.AvailabilityCache = JsonSerializer.Serialize(cachedAvail);
         return View(req);
     }
 
@@ -400,6 +437,37 @@ public class RequestsController : Controller
 
         TempData["Success"] = $"'{item.Title ?? item.SupplyDescription ?? "Item"}' removed from the materials list.";
         return RedirectToAction(nameof(Details), new { id });
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // DELETE REQUEST  (from Dashboard — any authenticated user who owns it,
+    //                  or OfficeManager / BookstoreStaff for any request)
+    // ════════════════════════════════════════════════════════════════════════
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteRequest(int id)
+    {
+        var req = await _db.CourseRequests
+            .Include(r => r.Items)
+            .FirstOrDefaultAsync(r => r.Id == id);
+
+        if (req is null) return NotFound();
+
+        // Ownership check: Professors may only delete their own requests.
+        // OfficeManagers and BookstoreStaff may delete any.
+        var role = CurrentRole;
+        if (role == "Professor" && req.SubmitterId != CurrentUserId)
+            return Forbid();
+
+        var label = $"{req.CourseNumber} — {req.Semester}";
+
+        // Remove child items first (cascade-on-delete is not always configured)
+        _db.RequestItems.RemoveRange(req.Items);
+        _db.CourseRequests.Remove(req);
+        await _db.SaveChangesAsync();
+
+        TempData["Success"] = $"Course request '{label}' has been deleted.";
+        return RedirectToAction("Index", "Dashboard");
     }
 
     // ── helper ────────────────────────────────────────────────────────────

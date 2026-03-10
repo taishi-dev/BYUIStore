@@ -254,14 +254,27 @@ else
                 }
                 @if (b.DigitalAvailableOnVitalSource)
                 {
-                  <a href="@b.VitalSourceUrl" target="_blank" class="badge bg-info text-white text-decoration-none"
-                     title="Available on VitalSource">
-                    <i class="bi bi-tablet me-1"></i>VitalSource
-                  </a>
+                  <div style="display:inline-flex;flex-direction:column;align-items:center;gap:3px;">
+                    <!-- Green checkmark -->
+                    <span style="color:#2e7d32;font-size:18px;font-weight:900;line-height:1;">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"
+                           viewBox="0 0 24 24" fill="none" stroke="#2e7d32" stroke-width="3"
+                           stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                    </span>
+                    <a href="@b.VitalSourceUrl" target="_blank"
+                       class="badge bg-info text-white text-decoration-none"
+                       style="font-size:10px;"
+                       title="Available on VitalSource — digital book confirmed">
+                      <i class="bi bi-tablet me-1"></i>VitalSource
+                    </a>
+                  </div>
                 }
                 @if (b.EbookAvailableOnGoogle)
                 {
-                  <a href="@b.GoogleBuyLink" target="_blank" class="badge bg-primary text-white text-decoration-none ms-1"
+                  <a href="@b.GoogleBuyLink" target="_blank"
+                     class="badge bg-primary text-white text-decoration-none ms-1"
                      title="eBook on Google Books">
                     <i class="bi bi-book me-1"></i>eBook
                   </a>
@@ -274,6 +287,20 @@ else
 
               <!-- Price -->
               <td>
+                @if (b.VitalSourcePrice.HasValue)
+                {
+                  <div style="margin-bottom:3px;">
+                    <small class="text-muted">120-day rental:</small>
+                    <strong style="color:#0d6efd;">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12"
+                           viewBox="0 0 24 24" fill="none" stroke="#2e7d32" stroke-width="3"
+                           stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:2px;">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                      $@b.VitalSourcePrice.Value.ToString("F2")
+                    </strong>
+                  </div>
+                }
                 @if (b.PrintRetailPrice.HasValue)
                 {
                   <div>
@@ -290,7 +317,7 @@ else
                     <strong class="text-info">$@b.EbookPrice.Value.ToString("F2")</strong>
                   </div>
                 }
-                @if (!b.PrintRetailPrice.HasValue && !b.EbookPrice.HasValue)
+                @if (!b.VitalSourcePrice.HasValue && !b.PrintRetailPrice.HasValue && !b.EbookPrice.HasValue)
                 { <span class="text-muted small">Not listed</span> }
               </td>
 

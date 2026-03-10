@@ -1,6 +1,7 @@
 using BYUIVerbaCollect.Data;
 using BYUIVerbaCollect.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using System.Text.Json;
 using System.Net;
 
@@ -19,11 +20,27 @@ public class BookAvailabilityService
     private readonly AppDbContext _db;
     private readonly IHttpClientFactory _httpFactory;
     private readonly ILogger<BookAvailabilityService> _logger;
+    private readonly IMemoryCache _cache;
+
+    private static string CacheKey(string isbn) => $"isbn_avail:{isbn}";
+    private static readonly MemoryCacheEntryOptions CacheOpts =
+        new MemoryCacheEntryOptions().SetAbsoluteExpiration(TimeSpan.FromHours(24));
 
     public BookAvailabilityService(AppDbContext db, IHttpClientFactory httpFactory,
-        ILogger<BookAvailabilityService> logger)
+        ILogger<BookAvailabilityService> logger, IMemoryCache cache)
     {
-        _db = db; _httpFactory = httpFactory; _logger = logger;
+        _db = db; _httpFactory = httpFactory; _logger = logger; _cache = cache;
+    }
+
+    /// <summary>
+    /// Returns cached availability data for an ISBN without making any network call.
+    /// Returns null if the ISBN has never been checked in this process lifetime.
+    /// </summary>
+    public BookAvailabilityItem? TryGetFromCache(string isbn)
+    {
+        var clean = isbn.Replace("-", "").Trim();
+        _cache.TryGetValue(CacheKey(clean), out BookAvailabilityItem? result);
+        return result;
     }
 
     // ── Main entry: pull books from approved requests, check everything ────
@@ -138,7 +155,7 @@ public class BookAvailabilityService
 
             if (info.TryGetProperty("imageLinks", out var il) &&
                 il.TryGetProperty("thumbnail", out var th))
-                item.CoverThumbnailUrl = th.GetString();
+                item.CoverThumbnailUrl = th.GetString()?.Replace("http://", "https://");
         }
         catch (Exception ex)
         {
@@ -150,7 +167,7 @@ public class BookAvailabilityService
     {
         try
         {
-            // ── Step 1: Search page — confirms the book exists on VitalSource ──────
+            // ── Step 1: Search page → extract first /products/... href ─────────────
             var searchUrl = $"https://www.vitalsource.com/search?term={Uri.EscapeDataString(isbn)}";
             var searchReq = new HttpRequestMessage(HttpMethod.Get, searchUrl);
             searchReq.Headers.Add("User-Agent",
@@ -162,57 +179,105 @@ public class BookAvailabilityService
             if (!searchResp.IsSuccessStatusCode) return;
 
             var searchHtml = await searchResp.Content.ReadAsStringAsync();
-            bool found = searchHtml.Contains("vitalsource.com/products/", StringComparison.OrdinalIgnoreCase)
-                      && !searchHtml.Contains("No results found", StringComparison.OrdinalIgnoreCase);
 
-            item.DigitalAvailableOnVitalSource = found;
-            if (!found) return;
+            // ── Primary: href="/products/..." OR absolute href="https://www.vitalsource.com/products/..." ──
+            var productPath = System.Text.RegularExpressions.Regex.Match(
+                searchHtml,
+                @"href=""(?:https://www\.vitalsource\.com)?(/products/[^""?#]+)""",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+                .Groups[1].Value;
 
-            // ── Step 2: Extract the product page URL from the search results ────────
-            // VitalSource VBID = "v" + ISBN13 (no dashes), e.g. v9780547750149
-            var vbid  = "v" + isbn;
-            string? productUrl = null;
-
-            // 2a: Search the __NEXT_DATA__ JSON blob for a path containing the VBID
-            var nextDataSearchMatch = System.Text.RegularExpressions.Regex.Match(searchHtml,
-                @"<script id=""__NEXT_DATA__""[^>]*>([\s\S]*?)</script>",
-                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-            if (nextDataSearchMatch.Success)
+            // ── Fallback A: __NEXT_DATA__ JSON contains /products/ path ───
+            if (string.IsNullOrEmpty(productPath))
             {
-                // Look for VBID anywhere in the JSON blob (may be URL-encoded or not)
-                var pathInJson = System.Text.RegularExpressions.Regex.Match(
-                    nextDataSearchMatch.Groups[1].Value,
-                    $@"""(/products/[^""]*?{System.Text.RegularExpressions.Regex.Escape(vbid)}[^""]*?)""",
+                var ndMatch = System.Text.RegularExpressions.Regex.Match(searchHtml,
+                    @"<script id=""__NEXT_DATA__""[^>]*>([\s\S]*?)</script>",
                     System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                if (pathInJson.Success)
-                    productUrl = "https://www.vitalsource.com" + pathInJson.Groups[1].Value;
+                if (ndMatch.Success)
+                {
+                    var pathM = System.Text.RegularExpressions.Regex.Match(
+                        ndMatch.Groups[1].Value,
+                        @"""(/products/[^""?#]+)""",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (pathM.Success)
+                        productPath = pathM.Groups[1].Value;
+                }
             }
 
-            // 2b: Try href attributes in the raw HTML
-            if (productUrl is null)
+            // ── Fallback B: direct VBID URL v+ISBN13 ─────────────────────
+            string? preloadedHtml = null;
+            if (string.IsNullOrEmpty(productPath))
             {
-                var hrefMatch = System.Text.RegularExpressions.Regex.Match(searchHtml,
-                    $@"href=[""'](/products/[^""']*?{System.Text.RegularExpressions.Regex.Escape(vbid)}[^""']*?)[""']",
-                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                if (hrefMatch.Success)
-                    productUrl = "https://www.vitalsource.com" + hrefMatch.Groups[1].Value;
+                var vbidUrl = $"https://www.vitalsource.com/products/v{isbn}";
+                var vbidReq = new HttpRequestMessage(HttpMethod.Get, vbidUrl);
+                vbidReq.Headers.Add("User-Agent",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+                vbidReq.Headers.Add("Accept", "text/html,application/xhtml+xml");
+                vbidReq.Headers.Add("Accept-Language", "en-US,en;q=0.9");
+                var vbidResp = await http.SendAsync(vbidReq);
+                if (vbidResp.IsSuccessStatusCode)
+                {
+                    var vbidHtml = await vbidResp.Content.ReadAsStringAsync();
+                    // Confirm it's a real product page by checking og:title
+                    var titleM = System.Text.RegularExpressions.Regex.Match(vbidHtml,
+                        @"property=""og:title""[^>]*content=""([^""]+)""",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (!titleM.Success)
+                        titleM = System.Text.RegularExpressions.Regex.Match(vbidHtml,
+                            @"content=""([^""]+)""[^>]*property=""og:title""",
+                            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    var ogTitle = titleM.Groups[1].Value;
+                    if (!string.IsNullOrWhiteSpace(ogTitle) &&
+                        !ogTitle.Contains("search", StringComparison.OrdinalIgnoreCase) &&
+                        !ogTitle.Contains("vitalsource bookshelf", StringComparison.OrdinalIgnoreCase))
+                    {
+                        productPath   = $"/products/v{isbn}";
+                        preloadedHtml = vbidHtml;
+                    }
+                }
             }
 
-            // 2c: Try any JSON string that contains the ISBN digits (VS sometimes omits 'v' prefix)
-            if (productUrl is null)
+            if (string.IsNullOrEmpty(productPath))
             {
-                var loosePath = System.Text.RegularExpressions.Regex.Match(searchHtml,
-                    $@"""(/products/[^""]*?{System.Text.RegularExpressions.Regex.Escape(isbn)}[^""]*?)""",
-                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                if (loosePath.Success)
-                    productUrl = "https://www.vitalsource.com" + loosePath.Groups[1].Value;
+                _logger.LogWarning("VitalSource: no /products/ link found in search results for ISBN {Isbn}", isbn);
+                return;
             }
 
-            // 2d: Hard-coded fallback path that VitalSource accepts via redirect
-            productUrl ??= $"https://www.vitalsource.com/search?term={Uri.EscapeDataString(isbn)}";
+            item.DigitalAvailableOnVitalSource = true;
+            var productUrl = "https://www.vitalsource.com" + productPath;
+            item.VitalSourceUrl = productUrl;
 
-            // ── Step 3: Fetch product page → parse 120-day rental price ──────────
-            item.VitalSourcePrice = await FetchVs120DayPriceAsync(http, productUrl, isbn);
+            // ── Step 2: Fetch product page → extract price + cover image ─────────
+            string? productHtml = preloadedHtml;
+            if (productHtml == null)
+            {
+                var prodReq = new HttpRequestMessage(HttpMethod.Get, productUrl);
+                prodReq.Headers.Add("User-Agent",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+                prodReq.Headers.Add("Accept", "text/html,application/xhtml+xml");
+                prodReq.Headers.Add("Accept-Language", "en-US,en;q=0.9");
+                var prodResp = await http.SendAsync(prodReq);
+                if (prodResp.IsSuccessStatusCode)
+                    productHtml = await prodResp.Content.ReadAsStringAsync();
+            }
+
+            if (productHtml != null)
+            {
+                // Extract 120-day price
+                item.VitalSourcePrice = await FetchVs120DayPriceAsync(http, productUrl, isbn, productHtml);
+
+                // Extract cover image from og:image if Google Books didn't provide one
+                if (string.IsNullOrEmpty(item.CoverThumbnailUrl))
+                {
+                    var ogImage = ExtractOgContent(productHtml, "og:image");
+                    if (!string.IsNullOrEmpty(ogImage))
+                        item.CoverThumbnailUrl = ogImage.Replace("http://", "https://");
+                }
+            }
+            else
+            {
+                item.VitalSourcePrice = await FetchVs120DayPriceAsync(http, productUrl, isbn, null);
+            }
         }
         catch (Exception ex)
         {
@@ -223,23 +288,33 @@ public class BookAvailabilityService
     /// <summary>
     /// Fetches a VitalSource product page and returns the 120-day rental price.
     /// Tries __NEXT_DATA__ JSON first (most reliable), then regex fallbacks.
+    /// Pass <paramref name="preloadedHtml"/> to reuse already-fetched HTML (e.g. from VBID fallback).
     /// </summary>
-    private async Task<decimal?> FetchVs120DayPriceAsync(HttpClient http, string productUrl, string isbn)
+    private async Task<decimal?> FetchVs120DayPriceAsync(HttpClient http, string productUrl, string isbn,
+        string? preloadedHtml = null)
     {
         try
         {
-            var req = new HttpRequestMessage(HttpMethod.Get, productUrl);
-            req.Headers.Add("User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-            req.Headers.Add("Accept", "text/html,application/xhtml+xml");
-            req.Headers.Add("Accept-Language", "en-US,en;q=0.9");
+            string html;
+            if (preloadedHtml != null)
+            {
+                html = preloadedHtml;
+            }
+            else
+            {
+                var req = new HttpRequestMessage(HttpMethod.Get, productUrl);
+                req.Headers.Add("User-Agent",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+                req.Headers.Add("Accept", "text/html,application/xhtml+xml");
+                req.Headers.Add("Accept-Language", "en-US,en;q=0.9");
 
-            var resp = await http.SendAsync(req);
-            if (!resp.IsSuccessStatusCode) return null;
+                var resp = await http.SendAsync(req);
+                if (!resp.IsSuccessStatusCode) return null;
 
-            var html = await resp.Content.ReadAsStringAsync();
+                html = await resp.Content.ReadAsStringAsync();
+            }
 
-            // ── Try 1: Walk the Next.js __NEXT_DATA__ JSON for 120-day license ──
+            // ── Try 1: __NEXT_DATA__ JSON (most reliable) ─────────────────────────
             var nextDataMatch = System.Text.RegularExpressions.Regex.Match(html,
                 @"<script id=""__NEXT_DATA__""[^>]*>([\s\S]*?)</script>",
                 System.Text.RegularExpressions.RegexOptions.IgnoreCase);
@@ -368,6 +443,11 @@ public class BookAvailabilityService
     public async Task<BookAvailabilityItem> CheckSingleIsbnAsync(string isbn)
     {
         var clean = isbn.Replace("-", "").Trim();
+
+        // Return cached result immediately if available (avoids redundant live calls)
+        if (_cache.TryGetValue(CacheKey(clean), out BookAvailabilityItem? cached) && cached is not null)
+            return cached;
+
         var http  = _httpFactory.CreateClient("GoogleBooks");
         var item  = new BookAvailabilityItem
         {
@@ -379,6 +459,9 @@ public class BookAvailabilityService
             CheckGoogleBooksAsync(clean, item, http),
             CheckVitalSourceAsync(clean, item, http)
         );
+
+        // Store in cache so subsequent page loads are instant
+        _cache.Set(CacheKey(clean), item, CacheOpts);
         return item;
     }
 
