@@ -230,7 +230,7 @@ function addBook() {
                           <polyline points="20 6 9 17 4 12"></polyline>
                         </svg>
                         <span style="font-size:12px;font-weight:800;color:#1565c0;letter-spacing:.04em;">HAS IA PRICE</span>
-                        <span style="font-size:11px;color:#555;">eTextbook License:</span>
+                        <span id="conf_vs_price_label_${idx}" style="font-size:11px;color:#555;">eTextbook License:</span>
                         <strong id="conf_vs_price_${idx}" style="color:#1565c0;font-size:14px;"></strong>
                       </div>
                     </div>
@@ -503,9 +503,15 @@ function showConfirmation(idx, book) {
     if (book.digitalOnVitalSource) {
       digitalWrap.classList.remove('d-none');
 
-      // IA price badge
+      // IA price badge — show label based on rental period
       const rawPrice = book.vitalSourcePrice ?? book.vitalsourcePrice ?? null;
       if (iaPriceWrap && vsPriceEl && rawPrice != null && Number(rawPrice) > 0) {
+        const days = book.vitalSourcePriceDays;
+        const priceLabel = days === 0   ? 'Lifetime license:'
+                         : days === 180 ? '180-day rental:'
+                         : days === 120 ? '120-day rental:'
+                         :                'eTextbook License:';
+        setText(`conf_vs_price_label_${idx}`, priceLabel);
         setText(`conf_vs_price_${idx}`, `$${Number(rawPrice).toFixed(2)}`);
         iaPriceWrap.classList.remove('d-none');
         iaPriceWrap.style.display = 'inline-flex';

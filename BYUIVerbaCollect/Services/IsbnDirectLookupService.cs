@@ -385,6 +385,7 @@ public class IsbnDirectLookupService
 
             price120 = FindPriceNearDays(productHtml, @"120[\s-]?[Dd]ay");
             price180 = FindPriceNearDays(productHtml, @"180[\s-]?[Dd]ay");
+            decimal? priceLifetime = FindPriceNearDays(productHtml, @"(?:[Ll]ife\s*[Tt]ime|LIFETIME|[Pp]erpetual|[Oo]wn\s+[Ff]orever|[Pp]urchase)");
 
             // Fallback: JSON-LD offers.price or first $XX.XX on the page
             decimal? fallbackPrice = null;
@@ -417,17 +418,20 @@ public class IsbnDirectLookupService
                     fallbackPrice = fp3;
             }
 
-            // Choose: 120-day preferred → 180-day → generic fallback
-            decimal? chosenPrice = price120 ?? price180 ?? fallbackPrice;
-            int?     chosenDays  = price120.HasValue ? 120 : price180.HasValue ? 180 : null;
+            // Choose: 120-day preferred → 180-day → Lifetime → generic fallback
+            decimal? chosenPrice = price120 ?? price180 ?? priceLifetime ?? fallbackPrice;
+            int?     chosenDays  = price120.HasValue   ? 120 :
+                                   price180.HasValue   ? 180 :
+                                   priceLifetime.HasValue ? 0  : null;
 
             var productUrl = "https://www.vitalsource.com" + productPath;
 
+            string daysLabel = chosenDays == 0 ? "Lifetime" : chosenDays.HasValue ? $"{chosenDays}-day" : "unknown";
             _logger.LogInformation(
-                "VitalSource found ISBN {Isbn}: {Title} by {Author} ({Year}) price={Price} ({Days}-day)",
+                "VitalSource found ISBN {Isbn}: {Title} by {Author} ({Year}) price={Price} ({Label})",
                 isbn, title, author, year,
                 chosenPrice?.ToString("F2") ?? "n/a",
-                chosenDays?.ToString() ?? "?");
+                daysLabel);
 
             return new IsbnLookupResult
             {

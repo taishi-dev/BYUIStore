@@ -49,7 +49,14 @@ builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddMemoryCache();
 
 // ── MVC ────────────────────────────────────────────────────────────────────
-builder.Services.AddControllersWithViews();
+// Program.cs
+builder.Services.AddControllersWithViews()
+    .AddJsonOptions(options =>
+    {
+        // ✅ これでC#のPascalCaseがJSONではcamelCaseになる
+        options.JsonSerializerOptions.PropertyNamingPolicy = 
+            System.Text.Json.JsonNamingPolicy.CamelCase;
+    });
 
 var app = builder.Build();
 

@@ -106,19 +106,20 @@ public class ApiController : ControllerBase
 
         return Ok(new
         {
-            isbn                = r.Isbn,
-            printAvailable      = r.PrintAvailable,
-            printPrice          = r.PrintPrice,
-            priceFlagged        = r.PriceFlagged,
+            isbn                 = r.Isbn,
+            printAvailable       = r.PrintAvailable,
+            printPrice           = r.PrintPrice,
+            priceFlagged         = r.PriceFlagged,
             digitalOnVitalSource = r.DigitalOnVitalSource,
-            digitalOnGoogle     = r.DigitalOnGoogle,
-            vitalSourceUrl      = r.VitalSourceUrl,
-            amazonUrl           = r.AmazonUrl,
-            googleBuyLink       = r.GoogleBuyLink,
-            coverThumbnail      = r.CoverThumbnail,
-            requiredChanged     = r.RequiredChanged,
-            previousIsRequired  = r.PreviousIsRequired,
-            previousSemester    = r.PreviousSemester
+            digitalOnGoogle      = r.DigitalOnGoogle,
+            vitalSourceUrl       = r.VitalSourceUrl,
+            vitalSourcePriceDays = r.VitalSourcePriceDays,   // 120, 180, 0=Lifetime, null=unknown
+            amazonUrl            = r.AmazonUrl,
+            googleBuyLink        = r.GoogleBuyLink,
+            coverThumbnail       = r.CoverThumbnail,
+            requiredChanged      = r.RequiredChanged,
+            previousIsRequired   = r.PreviousIsRequired,
+            previousSemester     = r.PreviousSemester
         });
     }
 }

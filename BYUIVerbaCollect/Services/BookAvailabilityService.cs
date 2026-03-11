@@ -263,8 +263,10 @@ public class BookAvailabilityService
 
             if (productHtml != null)
             {
-                // Extract 120-day price
-                item.VitalSourcePrice = await FetchVs120DayPriceAsync(http, productUrl, isbn, productHtml);
+                // Extract best available price (120-day → 180-day → Lifetime)
+                var (vsPrice, vsDays) = await FetchVsBestPriceAsync(http, productUrl, isbn, productHtml);
+                item.VitalSourcePrice     = vsPrice;
+                item.VitalSourcePriceDays = vsDays;
 
                 // Extract cover image from og:image if Google Books didn't provide one
                 if (string.IsNullOrEmpty(item.CoverThumbnailUrl))
@@ -276,7 +278,9 @@ public class BookAvailabilityService
             }
             else
             {
-                item.VitalSourcePrice = await FetchVs120DayPriceAsync(http, productUrl, isbn, null);
+                var (vsPrice2, vsDays2) = await FetchVsBestPriceAsync(http, productUrl, isbn, null);
+                item.VitalSourcePrice     = vsPrice2;
+                item.VitalSourcePriceDays = vsDays2;
             }
         }
         catch (Exception ex)
@@ -286,12 +290,11 @@ public class BookAvailabilityService
     }
 
     /// <summary>
-    /// Fetches a VitalSource product page and returns the 120-day rental price.
-    /// Tries __NEXT_DATA__ JSON first (most reliable), then regex fallbacks.
-    /// Pass <paramref name="preloadedHtml"/> to reuse already-fetched HTML (e.g. from VBID fallback).
+    /// Returns the best available VitalSource price: 120-day rental preferred,
+    /// then 180-day, then Lifetime. Returns (price, days) where days=0 means Lifetime.
     /// </summary>
-    private async Task<decimal?> FetchVs120DayPriceAsync(HttpClient http, string productUrl, string isbn,
-        string? preloadedHtml = null)
+    private async Task<(decimal? price, int? days)> FetchVsBestPriceAsync(
+        HttpClient http, string productUrl, string isbn, string? preloadedHtml = null)
     {
         try
         {
@@ -307,14 +310,12 @@ public class BookAvailabilityService
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
                 req.Headers.Add("Accept", "text/html,application/xhtml+xml");
                 req.Headers.Add("Accept-Language", "en-US,en;q=0.9");
-
                 var resp = await http.SendAsync(req);
-                if (!resp.IsSuccessStatusCode) return null;
-
+                if (!resp.IsSuccessStatusCode) return (null, null);
                 html = await resp.Content.ReadAsStringAsync();
             }
 
-            // ── Try 1: __NEXT_DATA__ JSON (most reliable) ─────────────────────────
+            // ── Try 1: __NEXT_DATA__ JSON (most reliable) ─────────────────
             var nextDataMatch = System.Text.RegularExpressions.Regex.Match(html,
                 @"<script id=""__NEXT_DATA__""[^>]*>([\s\S]*?)</script>",
                 System.Text.RegularExpressions.RegexOptions.IgnoreCase);
@@ -323,109 +324,132 @@ public class BookAvailabilityService
                 try
                 {
                     using var doc = JsonDocument.Parse(nextDataMatch.Groups[1].Value);
-                    var price = FindVs120DayPriceInJson(doc.RootElement);
-                    if (price.HasValue) return price;
+                    var (jp, jd) = FindVsBestPriceInJson(doc.RootElement);
+                    if (jp.HasValue) return (jp, jd);
                 }
                 catch { /* JSON parse error — fall through */ }
             }
 
-            // ── Try 2: "120" token close to a "$X.XX" price ──────────────────────
-            var mA = System.Text.RegularExpressions.Regex.Match(html,
-                @"120\s*[-–]?\s*[Dd]ay[s]?[^$\d]{0,200}\$(\d{1,4}\.\d{2})",
-                System.Text.RegularExpressions.RegexOptions.Singleline);
-            if (mA.Success && decimal.TryParse(mA.Groups[1].Value,
-                System.Globalization.NumberStyles.Any,
-                System.Globalization.CultureInfo.InvariantCulture, out var pA))
-                return pA;
+            // ── Try 2: regex near day-count keywords ──────────────────────
+            static decimal? RegexNearDays(string h, string pattern)
+            {
+                var m = System.Text.RegularExpressions.Regex.Match(h,
+                    pattern + @"[^$\d]{0,200}\$(\d{1,4}\.\d{2})",
+                    System.Text.RegularExpressions.RegexOptions.Singleline | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (m.Success && decimal.TryParse(m.Groups[1].Value,
+                    System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var v)
+                    && v > 0 && v < 1500) return v;
 
-            var mB = System.Text.RegularExpressions.Regex.Match(html,
-                @"\$(\d{1,4}\.\d{2})[^$\d]{0,200}120\s*[-–]?\s*[Dd]ay[s]?",
-                System.Text.RegularExpressions.RegexOptions.Singleline);
-            if (mB.Success && decimal.TryParse(mB.Groups[1].Value,
-                System.Globalization.NumberStyles.Any,
-                System.Globalization.CultureInfo.InvariantCulture, out var pB))
-                return pB;
+                // price-before-label
+                m = System.Text.RegularExpressions.Regex.Match(h,
+                    @"\$(\d{1,4}\.\d{2})[^$\d]{0,200}" + pattern,
+                    System.Text.RegularExpressions.RegexOptions.Singleline | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (m.Success && decimal.TryParse(m.Groups[1].Value,
+                    System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var v2)
+                    && v2 > 0 && v2 < 1500) return v2;
 
-            // ── Try 3: First JSON "price":"X.XX" on the product page ─────────────
+                return null;
+            }
+
+            var p120  = RegexNearDays(html, @"120\s*[-–]?\s*[Dd]ay");
+            if (p120.HasValue)  return (p120, 120);
+
+            var p180  = RegexNearDays(html, @"180\s*[-–]?\s*[Dd]ay");
+            if (p180.HasValue)  return (p180, 180);
+
+            var pLife = RegexNearDays(html, @"(?:[Ll]ife\s*[Tt]ime|LIFETIME|[Pp]erpetual|[Oo]wn\s*[Ff]orever|[Pp]urchase)");
+            if (pLife.HasValue) return (pLife, 0);
+
+            // ── Try 3: JSON "price" field (last resort) ───────────────────
             var mJ = System.Text.RegularExpressions.Regex.Match(html,
                 @"""price""\s*:\s*""?(\d{1,4}(?:\.\d{1,2})?)""?",
                 System.Text.RegularExpressions.RegexOptions.IgnoreCase);
             if (mJ.Success && decimal.TryParse(mJ.Groups[1].Value,
-                System.Globalization.NumberStyles.Any,
-                System.Globalization.CultureInfo.InvariantCulture, out var pJ))
-                return pJ;
+                System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var pJ)
+                && pJ > 0 && pJ < 1500)
+                return (pJ, null);
 
-            return null;
+            return (null, null);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "VitalSource product page fetch failed for {Url}", productUrl);
-            return null;
+            _logger.LogWarning(ex, "VitalSource price fetch failed for {Url}", productUrl);
+            return (null, null);
         }
     }
 
     /// <summary>
-    /// Recursively walks parsed Next.js __NEXT_DATA__ JSON to find a license object
-    /// that has duration == 120 (days) and a price/amount field.
+    /// Recursively walks __NEXT_DATA__ JSON to find the best license price:
+    /// 120-day preferred, then 180-day, then Lifetime (duration=null or type=LIFE).
+    /// Returns (price, days) where days=0 means Lifetime.
     /// </summary>
-    private static decimal? FindVs120DayPriceInJson(JsonElement element)
+    private static (decimal? price, int? days) FindVsBestPriceInJson(JsonElement element)
     {
-        if (element.ValueKind == JsonValueKind.Object)
+        decimal? best120 = null, best180 = null, bestLife = null;
+
+        void Walk(JsonElement el)
         {
-            bool has120 = false;
-            decimal? price = null;
-
-            foreach (var prop in element.EnumerateObject())
+            if (el.ValueKind == JsonValueKind.Object)
             {
-                var key = prop.Name.ToLowerInvariant();
+                int? duration = null;
+                bool isLifetime = false;
+                decimal? price = null;
 
-                // Detect duration = 120 days
-                if (key is "duration" or "days" or "numdays" or "num_days" or "licenselength")
+                foreach (var prop in el.EnumerateObject())
                 {
-                    if (prop.Value.ValueKind == JsonValueKind.Number)
+                    var key = prop.Name.ToLowerInvariant();
+
+                    if (key is "duration" or "days" or "numdays" or "num_days" or "licenselength")
                     {
-                        try { if (prop.Value.GetInt32() == 120) has120 = true; } catch { }
+                        if (prop.Value.ValueKind == JsonValueKind.Number)
+                            try { duration = prop.Value.GetInt32(); } catch { }
+                        else if (prop.Value.ValueKind == JsonValueKind.String &&
+                                 int.TryParse(prop.Value.GetString(), out var di))
+                            duration = di;
+                        else if (prop.Value.ValueKind == JsonValueKind.Null)
+                            isLifetime = true;
                     }
-                    else if (prop.Value.ValueKind == JsonValueKind.String)
+
+                    if (key is "licensetype" or "type" or "durationtype" or "license_type")
                     {
-                        if (prop.Value.GetString() is "120") has120 = true;
+                        var s = prop.Value.GetString()?.ToUpperInvariant() ?? "";
+                        if (s.Contains("LIFE") || s.Contains("PERP") || s.Contains("OWN") || s == "PERM")
+                            isLifetime = true;
+                    }
+
+                    if (key is "price" or "amount" or "retail_price" or "retailprice" or "listprice" or "list_price")
+                    {
+                        if (prop.Value.ValueKind == JsonValueKind.Number)
+                            try { price = prop.Value.GetDecimal(); } catch { }
+                        else if (prop.Value.ValueKind == JsonValueKind.String &&
+                                 decimal.TryParse(prop.Value.GetString(),
+                                     System.Globalization.NumberStyles.Any,
+                                     System.Globalization.CultureInfo.InvariantCulture, out var sp))
+                            price = sp;
                     }
                 }
 
-                // Detect price field
-                if (key is "price" or "amount" or "retail_price" or "retailprice" or "listprice" or "list_price")
+                if (price.HasValue && price.Value >= 1m)
                 {
-                    if (prop.Value.ValueKind == JsonValueKind.Number)
-                    {
-                        try { price = prop.Value.GetDecimal(); } catch { }
-                    }
-                    else if (prop.Value.ValueKind == JsonValueKind.String &&
-                             decimal.TryParse(prop.Value.GetString(),
-                                 System.Globalization.NumberStyles.Any,
-                                 System.Globalization.CultureInfo.InvariantCulture, out var sp))
-                        price = sp;
+                    if (duration == 120)          best120  = price;
+                    else if (duration == 180)     best180  = price;
+                    else if (isLifetime || duration == 0) bestLife = price;
                 }
+
+                foreach (var prop in el.EnumerateObject()) Walk(prop.Value);
             }
-
-            if (has120 && price.HasValue && price.Value >= 1m)
-                return price;
-
-            // Recurse
-            foreach (var prop in element.EnumerateObject())
+            else if (el.ValueKind == JsonValueKind.Array)
             {
-                var found = FindVs120DayPriceInJson(prop.Value);
-                if (found.HasValue) return found;
+                foreach (var child in el.EnumerateArray()) Walk(child);
             }
         }
-        else if (element.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var child in element.EnumerateArray())
-            {
-                var found = FindVs120DayPriceInJson(child);
-                if (found.HasValue) return found;
-            }
-        }
-        return null;
+
+        Walk(element);
+
+        if (best120.HasValue)  return (best120, 120);
+        if (best180.HasValue)  return (best180, 180);
+        if (bestLife.HasValue) return (bestLife, 0);
+        return (null, null);
     }
 
     private static string Str(JsonElement el, string key) =>
@@ -520,6 +544,7 @@ public class BookAvailabilityService
             DigitalOnVitalSource = avail.DigitalAvailableOnVitalSource,
             DigitalOnGoogle      = avail.EbookAvailableOnGoogle,
             VitalSourceUrl       = avail.VitalSourceUrl,
+            VitalSourcePriceDays = avail.VitalSourcePriceDays,
             AmazonUrl            = avail.AmazonUrl,
             GoogleBuyLink        = avail.GoogleBuyLink,
             CoverThumbnail       = avail.CoverThumbnailUrl,
@@ -567,8 +592,10 @@ public class BookAvailabilityItem
     public decimal? EbookPrice                    { get; set; }
     public bool     DigitalAvailableOnVitalSource { get; set; }
     public string   VitalSourceUrl               { get; set; } = "";
-    /// <summary>Scraped 120-day rental price from VitalSource search results page.</summary>
+    /// <summary>Best available price from VitalSource (120-day preferred, then 180-day, then Lifetime).</summary>
     public decimal? VitalSourcePrice             { get; set; }
+    /// <summary>Rental period in days (120 or 180), or 0 for Lifetime. Null if not determined.</summary>
+    public int?     VitalSourcePriceDays         { get; set; }
 
     public int?    PageCount         { get; set; }
     public string? CoverThumbnailUrl { get; set; }
@@ -609,6 +636,8 @@ public class BookChecklistResult
     public bool     DigitalOnVitalSource { get; set; }
     public bool     DigitalOnGoogle      { get; set; }
     public string   VitalSourceUrl       { get; set; } = "";
+    /// <summary>Rental period in days (120 or 180), or 0 for Lifetime. Null if not determined.</summary>
+    public int?     VitalSourcePriceDays { get; set; }
     public string?  CoverThumbnail       { get; set; }
     public bool     RequiredChanged      { get; set; }
     public bool?    PreviousIsRequired   { get; set; }
