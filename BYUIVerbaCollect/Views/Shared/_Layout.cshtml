@@ -32,8 +32,8 @@
   @if (User.Identity?.IsAuthenticated == true)
   {
   <nav class="verba-topnav-links">
-    <a class="topnav-link @(controller=="Dashboard" || controller=="Requests" ? "active" : "")"
-       asp-controller="Dashboard" asp-action="Index">COURSES</a>
+    <a class="topnav-link @(controller=="Courses" || controller=="Requests" ? "active" : "")"
+       asp-controller="Courses" asp-action="Index">COURSES</a>
     <a class="topnav-link @(controller=="Availability" ? "active" : "")"
        asp-controller="Availability" asp-action="Index">ITEMS</a>
     <a class="topnav-link" href="#">DEPARTMENTS</a>

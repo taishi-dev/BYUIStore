@@ -44,4 +44,11 @@ public class RequestItem
 
     [MaxLength(500)]
     public string? Notes { get; set; }
+
+    // ── Removal Request ────────────────────────────────────────────────────
+    /// <summary>
+    /// Set when a professor requests removal of an already-approved/verified item.
+    /// The item stays in the DB until the material manager processes the removal.
+    /// </summary>
+    public DateTime? RemovalRequestedAt { get; set; }
 }

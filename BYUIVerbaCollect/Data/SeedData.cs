@@ -227,5 +227,61 @@ public static class SeedData
                 await db.SaveChangesAsync();
             }
         }
-    }
-}
+
+        // ── Ensure RM 342 (Spring 2025) is always present ─────────────────
+        var hasRm342 = await db.CourseRequests
+            .AnyAsync(c => c.CourseNumber == "RM 342" && c.Semester == "Spring 2025");
+
+        if (!hasRm342)
+        {
+            var submitter = await db.Users.FirstOrDefaultAsync(u => u.Role == "Professor");
+            var verifier  = await db.Users.FirstOrDefaultAsync(u => u.Role == "OfficeManager");
+            var approver  = await db.Users.FirstOrDefaultAsync(u => u.Role == "BookstoreStaff");
+
+            if (submitter != null && verifier != null && approver != null)
+            {
+                var now = DateTime.UtcNow;
+                var rm342 = new CourseRequest
+                {
+                    SubmitterId  = submitter.Id,
+                    CourseNumber = "RM 342",
+                    CourseName   = "Resort Management",
+                    Section      = "01",
+                    Semester     = "Spring 2025",
+                    Status       = RequestStatus.Approved,
+                    SubmittedAt  = now.AddDays(-45),
+                    VerifiedById = verifier.Id, VerifiedAt  = now.AddDays(-43),
+                    ApprovedById = approver.Id, ApprovedAt  = now.AddDays(-40),
+                    Items = new List<RequestItem>
+                    {
+                        new()
+                        {
+                            ItemType = ItemType.Book, IsRequired = true,
+                            Isbn = "9781933108919",
+                            Title = "Foundations of Resort Management",
+                            Author = "Experimental Author A",
+                            Publisher = "Resort Management Press",
+                            Edition = "1st Edition",
+                            PublicationYear = 2007,
+                            Quantity = 30,
+                            Notes = "Required main textbook"
+                        },
+                        new()
+                        {
+                            ItemType = ItemType.Book, IsRequired = true,
+                            Isbn = "9781040439630",
+                            Title = "Resort Operations and Guest Experience",
+                            Author = "Experimental Author B",
+                            Publisher = "Hospitality Academic Press",
+                            Edition = "1st Edition",
+                            PublicationYear = 2024,
+                            Quantity = 30,
+                            Notes = "Required supplemental text"
+                        }
+                    }
+                };
+                db.CourseRequests.Add(rm342);
+                await db.SaveChangesAsync();
+            }
+        }
+    }}

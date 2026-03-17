@@ -83,6 +83,29 @@ public class ApiController : ControllerBase
     }
 
     /// <summary>
+    /// GET /api/vitalsource-check?isbn=...
+    /// Lightweight endpoint for lazy AJAX digital-match indicator on the Course Materials page.
+    /// Tries the in-memory cache first (24-hr TTL); falls back to a live check only if needed.
+    /// </summary>
+    [HttpGet("vitalsource-check")]
+    public async Task<IActionResult> VitalSourceCheck([FromQuery] string isbn)
+    {
+        if (string.IsNullOrWhiteSpace(isbn))
+            return BadRequest(new { error = "ISBN required." });
+
+        var clean = isbn.Trim().Replace("-", "");
+
+        // Fast path: return cached result without making a network call
+        var cached = _availService.TryGetFromCache(clean);
+        if (cached != null)
+            return Ok(new { hasDigital = cached.DigitalAvailableOnVitalSource });
+
+        // Slow path: full check, result is cached for 24 h
+        var result = await _availService.CheckSingleIsbnAsync(clean);
+        return Ok(new { hasDigital = result.DigitalAvailableOnVitalSource });
+    }
+
+    /// <summary>
     /// GET /api/book-checklist?isbn=...&amp;courseNumber=...&amp;isRequired=...&amp;requestId=...
     /// Runs the full 4-point automated review checklist for one book:
     ///   1. Still available to buy (Amazon + Google)
