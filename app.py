@@ -66,7 +66,7 @@ def seed_demo_data():
             User(username="prof_smith",    password="byui1234", role="professor",        full_name="Prof. John Smith"),
             User(username="coord_lee",     password="byui1234", role="professor",        full_name="Coord. Sarah Lee"),
             User(username="manager_jones", password="byui1234", role="office_manager",   full_name="Manager Amy Jones"),
-            User(username="staff_brown",   password="byui1234", role="bookstore_staff",  full_name="Staff Tom Brown"),
+            User(username="staff_brown",   password="byui1234", role="material_manager",  full_name="Staff Tom Brown"),
         ]
         for u in users:
             db.session.add(u)

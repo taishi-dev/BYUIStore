@@ -1,0 +1,863 @@
+@model CampusAdoptions.ViewModels.CourseMaterialsViewModel
+@using CampusAdoptions.Models
+@{
+    ViewData["Title"]     = Model.CourseNumber;
+    ViewData["PageTitle"] = Model.CourseNumber;
+
+    var req    = Model.CurrentRequest;
+    var tab    = Model.ActiveTab;
+
+    // Status helpers
+    var statusLabel = req?.Status switch {
+        RequestStatus.Approved           => "APPROVED",
+        RequestStatus.Verified           => "SUBMITTED",
+        RequestStatus.PendingVerification => "PENDING",
+        RequestStatus.Rejected           => "REJECTED",
+        _                                => "NO SUBMISSION"
+    };
+    var statusClass = req?.Status switch {
+        RequestStatus.Approved           => "pill-approved",
+        RequestStatus.Verified           => "pill-verified",
+        RequestStatus.PendingVerification => "pill-pending",
+        RequestStatus.Rejected           => "pill-rejected",
+        _                                => "pill-none"
+    };
+
+    bool canDeleteDirectly = req?.Status == RequestStatus.PendingVerification;
+}
+
+<style>
+/* ── Top nav bar ─────────────────────────────────────────────── */
+.mat-topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: #fff;
+  border-bottom: 1px solid #dde;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .05em;
+}
+.mat-topbar a {
+  color: #003B71;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.mat-topbar a:hover { text-decoration: underline; }
+.mat-topbar-sep { color: #bbb; }
+.mat-course-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  margin-left: auto;
+}
+.pill-approved { background: #e8f5e9; border: 1px solid #43a047; color: #1b5e20; }
+.pill-verified { background: #e3f2fd; border: 1px solid #1976d2; color: #0d47a1; }
+.pill-pending  { background: #fff8e1; border: 1px solid #f9a825; color: #e65100; }
+.pill-rejected { background: #ffebee; border: 1px solid #e53935; color: #b71c1c; }
+.pill-none     { background: #f5f5f5; border: 1px solid #ccc;    color: #666; }
+
+/* ── Page body ───────────────────────────────────────────────── */
+.mat-body {
+  display: flex;
+  min-height: calc(100vh - 200px);
+  background: #f0f2f5;
+}
+
+/* ── Left panel (instructor info) ───────────────────────────── */
+.mat-left {
+  width: 220px;
+  flex-shrink: 0;
+  background: #fff;
+  border-right: 1px solid #dde;
+  padding: 20px 16px;
+}
+.mat-left-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  color: #99a;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.mat-left-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: #223;
+  margin-bottom: 16px;
+  line-height: 1.3;
+}
+.mat-left-section {
+  border-top: 1px solid #eef;
+  padding-top: 12px;
+  margin-top: 4px;
+}
+
+/* ── Right main panel ────────────────────────────────────────── */
+.mat-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* ── Tab bar ─────────────────────────────────────────────────── */
+.mat-tabs {
+  display: flex;
+  background: #fff;
+  border-bottom: 2px solid #dde;
+}
+.mat-tab {
+  padding: 12px 20px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  color: #778;
+  text-decoration: none;
+  border-bottom: 3px solid transparent;
+  transition: all .15s;
+  white-space: nowrap;
+}
+.mat-tab:hover { color: #003B71; background: #f5f8ff; }
+.mat-tab.active {
+  color: #003B71;
+  border-bottom-color: #003B71;
+  background: #f0f6ff;
+}
+
+/* ── Tab content ─────────────────────────────────────────────── */
+.mat-tab-content { padding: 20px; }
+
+/* ── Book card ───────────────────────────────────────────────── */
+.book-card {
+  display: flex;
+  background: #fff;
+  border: 1px solid #dde;
+  border-radius: 4px;
+  margin-bottom: 16px;
+  overflow: hidden;
+  transition: box-shadow .15s;
+}
+.book-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+
+.book-card-cover {
+  width: 90px;
+  flex-shrink: 0;
+  background: #e8ecf0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.book-card-cover img {
+  width: 90px;
+  height: 120px;
+  object-fit: cover;
+}
+.book-card-cover .cover-placeholder {
+  width: 90px;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #d8dde5;
+  color: #8899aa;
+  font-size: 28px;
+}
+
+.book-card-center {
+  flex: 1;
+  padding: 14px 16px;
+  min-width: 0;
+}
+.book-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: #112;
+  text-transform: uppercase;
+  letter-spacing: .02em;
+  margin-bottom: 2px;
+  line-height: 1.3;
+}
+.book-author {
+  font-size: 11px;
+  color: #667;
+  margin-bottom: 8px;
+}
+.book-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  margin-bottom: 8px;
+}
+.book-meta-item {
+  font-size: 10px;
+  color: #556;
+}
+.book-meta-item strong {
+  color: #334;
+  font-weight: 700;
+}
+.book-links { display: flex; gap: 10px; flex-wrap: wrap; }
+.book-link {
+  font-size: 10px;
+  font-weight: 700;
+  color: #003B71;
+  text-decoration: none;
+  letter-spacing: .04em;
+}
+.book-link:hover { text-decoration: underline; }
+
+.book-card-right {
+  width: 220px;
+  flex-shrink: 0;
+  padding: 12px 14px;
+  border-left: 1px solid #eef;
+  background: #fafbfd;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ── REMOVE FROM LIST button ─────────────────────────────────── */
+.btn-remove {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 1px solid #e0bcbc;
+  color: #c0392b;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  padding: 6px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  width: 100%;
+  justify-content: center;
+  transition: all .15s;
+  text-decoration: none;
+}
+.btn-remove:hover { background: #fff0ee; border-color: #c0392b; color: #c0392b; }
+.btn-removal-requested {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff8e1;
+  border: 1px solid #f9a825;
+  color: #b45309;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  padding: 6px 10px;
+  border-radius: 3px;
+  width: 100%;
+  justify-content: center;
+}
+
+/* ── Required badge ──────────────────────────────────────────── */
+.badge-required {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 2px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  background: #e8f5e9;
+  border: 1px solid #43a047;
+  color: #1b5e20;
+}
+.badge-optional {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 2px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  background: #f5f5f5;
+  border: 1px solid #bbb;
+  color: #555;
+}
+
+/* ── AUTO ACCESS panel ───────────────────────────────────────── */
+.auto-access-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  color: #99a;
+  text-transform: uppercase;
+  border-top: 1px solid #eef;
+  padding-top: 8px;
+  margin-top: 2px;
+}
+.digital-match-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  margin-top: 4px;
+  min-height: 20px;
+}
+.digital-match-yes { color: #1b5e20; }
+.digital-match-no  { color: #888; }
+.digital-match-loading { color: #aaa; font-size: 10px; }
+
+/* ── Empty state ─────────────────────────────────────────────── */
+.mat-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: #99a;
+}
+.mat-empty i { font-size: 2.5rem; margin-bottom: 12px; }
+
+/* ── Alert toasts ────────────────────────────────────────────── */
+.mat-toast {
+  padding: 12px 16px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mat-toast-success { background: #e8f5e9; border: 1px solid #43a047; color: #1b5e20; }
+.mat-toast-warning { background: #fff8e1; border: 1px solid #f9a825; color: #b45309; }
+
+/* ── Confirm modal ───────────────────────────────────────────── */
+.modal-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.45);
+  z-index: 9999;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.show { display: flex; }
+.modal-box {
+  background: #fff;
+  border-radius: 6px;
+  padding: 28px 28px 20px;
+  max-width: 420px;
+  width: 100%;
+  box-shadow: 0 8px 32px rgba(0,0,0,.2);
+}
+.modal-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: #c0392b;
+  margin-bottom: 8px;
+}
+.modal-body { font-size: 13px; color: #334; margin-bottom: 20px; line-height: 1.5; }
+.modal-footer { display: flex; gap: 10px; justify-content: flex-end; }
+.btn-modal-cancel {
+  background: #f0f0f0; border: none; padding: 8px 18px;
+  border-radius: 3px; font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.btn-modal-cancel:hover { background: #ddd; }
+.btn-modal-confirm {
+  background: #c0392b; border: none; color: #fff;
+  padding: 8px 18px; border-radius: 3px;
+  font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.btn-modal-confirm:hover { background: #a93226; }
+
+/* ── Prior adoption card ─────────────────────────────────────── */
+.prior-card {
+  background: #fff;
+  border: 1px solid #dde;
+  border-radius: 4px;
+  padding: 14px 18px;
+  margin-bottom: 14px;
+}
+.prior-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.prior-semester-badge {
+  font-size: 10px;
+  font-weight: 700;
+  background: #e3f2fd;
+  border: 1px solid #90caf9;
+  color: #0d47a1;
+  padding: 2px 10px;
+  border-radius: 20px;
+}
+</style>
+
+<!-- ── Confirm removal modal ─────────────────────────────────────────── -->
+<div class="modal-overlay" id="removeModal">
+    <div class="modal-box">
+        <div class="modal-title"><i class="bi bi-exclamation-triangle me-2"></i>Remove from List</div>
+        <div class="modal-body" id="removeModalBody">
+            Are you sure you want to remove this book?
+        </div>
+        <div class="modal-footer">
+            <button class="btn-modal-cancel" onclick="closeRemoveModal()">Cancel</button>
+            <form id="removeModalForm" method="post" style="margin:0;">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="itemId" id="removeModalItemId" />
+                <input type="hidden" name="course" value="@Model.CourseNumber" />
+                <button type="submit" class="btn-modal-confirm">Yes, Remove It</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ── Top navigation bar ─────────────────────────────────────────────── -->
+<div class="mat-topbar">
+    <a asp-controller="Courses" asp-action="Index">
+        <i class="bi bi-arrow-left"></i> BACK TO COURSES
+    </a>
+    <span class="mat-topbar-sep">|</span>
+    <span style="color:#334;font-size:13px;font-weight:800;">@Model.CourseNumber</span>
+    <span style="color:#778;font-size:11px;font-weight:500;">@Model.CourseName</span>
+    @if (req != null)
+    {
+        <span class="mat-course-pill @statusClass">
+            @if (req.Status == RequestStatus.Approved)
+            {
+                <i class="bi bi-check-circle-fill"></i>
+            }
+            else if (req.Status == RequestStatus.Rejected)
+            {
+                <i class="bi bi-x-circle-fill"></i>
+            }
+            else
+            {
+                <i class="bi bi-clock"></i>
+            }
+            @statusLabel
+        </span>
+    }
+    else
+    {
+        <span class="mat-course-pill pill-none">
+            <i class="bi bi-dash-circle"></i> NO SUBMISSION FOR @Model.CurrentSemester.ToUpper()
+        </span>
+    }
+</div>
+
+<!-- ── Page body ─────────────────────────────────────────────────────── -->
+<div class="mat-body">
+
+    <!-- ── Left panel ────────────────────────────────────────────────── -->
+    <div class="mat-left">
+        <div class="mat-left-label">Course</div>
+        <div class="mat-left-value">@Model.CourseNumber</div>
+
+        <div class="mat-left-label">Course Name</div>
+        <div class="mat-left-value">@Model.CourseName</div>
+
+        <div class="mat-left-label">Semester</div>
+        <div class="mat-left-value">@Model.CurrentSemester</div>
+
+        @if (req != null)
+        {
+            <div class="mat-left-section">
+                <div class="mat-left-label">Section</div>
+                <div class="mat-left-value">@(req.Section ?? "—")</div>
+
+                <div class="mat-left-label">Instructor</div>
+                <div class="mat-left-value">@(req.Submitter?.FullName ?? "—")</div>
+
+                <div class="mat-left-label">Submitted</div>
+                <div class="mat-left-value" style="font-size:11px;">
+                    @req.SubmittedAt.ToString("MMM dd, yyyy")
+                </div>
+            </div>
+        }
+
+        @if (Model.PriorAdoptions.Any())
+        {
+            <div class="mat-left-section" style="margin-top:20px;">
+                <div class="mat-left-label">Previous Adoptions</div>
+                @foreach (var prior in Model.PriorAdoptions)
+                {
+                    <div style="font-size:11px;color:#556;margin-bottom:4px;">
+                        <i class="bi bi-clock-history me-1"></i>@prior.Semester
+                        (@prior.Items.Count book@(prior.Items.Count != 1 ? "s" : ""))
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    <!-- ── Main content ──────────────────────────────────────────────── -->
+    <div class="mat-main">
+
+        <!-- Tab bar -->
+        <div class="mat-tabs">
+            <a class="mat-tab @(tab=="selected"?"active":"")"
+               asp-controller="Courses" asp-action="Materials"
+               asp-route-course="@Model.CourseNumber" asp-route-tab="selected">
+                SELECTED MATERIALS
+                @if (req?.Items.Any() == true)
+                {
+                    <span style="margin-left:6px;background:#003B71;color:#fff;
+                                 border-radius:10px;padding:0 6px;font-size:10px;">
+                        @req.Items.Count
+                    </span>
+                }
+            </a>
+            <a class="mat-tab @(tab=="copy"?"active":"")"
+               asp-controller="Courses" asp-action="Materials"
+               asp-route-course="@Model.CourseNumber" asp-route-tab="copy">
+                COPY ANOTHER ADOPTION
+                @if (Model.PriorAdoptions.Any())
+                {
+                    <span style="margin-left:6px;background:#667;color:#fff;
+                                 border-radius:10px;padding:0 6px;font-size:10px;">
+                        @Model.PriorAdoptions.Sum(p => p.Items.Count)
+                    </span>
+                }
+            </a>
+            <a class="mat-tab @(tab=="add"?"active":"")"
+               asp-controller="Requests" asp-action="Submit">
+                ADD MATERIALS
+            </a>
+            <a class="mat-tab @(tab=="messages"?"active":"")"
+               asp-controller="Courses" asp-action="Materials"
+               asp-route-course="@Model.CourseNumber" asp-route-tab="messages">
+                MESSAGES &amp; ACTIVITY
+            </a>
+        </div>
+
+        <!-- Tab content -->
+        <div class="mat-tab-content">
+
+            <!-- ── Flash messages ───────────────────────────────────── -->
+            @if (TempData["Success"] != null)
+            {
+                <div class="mat-toast mat-toast-success">
+                    <i class="bi bi-check-circle-fill"></i>@TempData["Success"]
+                </div>
+            }
+            @if (TempData["Warning"] != null)
+            {
+                <div class="mat-toast mat-toast-warning">
+                    <i class="bi bi-exclamation-triangle-fill"></i>@TempData["Warning"]
+                </div>
+            }
+
+            <!-- ════════════════════════════════════════════════════════ -->
+            @if (tab == "selected" || tab == null)
+            {
+                @if (req == null || !req.Items.Any())
+                {
+                    <div class="mat-empty">
+                        <i class="bi bi-journal-x"></i>
+                        <p class="fw-semibold mb-1">No materials selected for @Model.CurrentSemester</p>
+                        <p class="mb-3" style="font-size:12px;">Add books from scratch or copy a previous semester's adoption.</p>
+                        <div class="d-flex gap-2">
+                            <a asp-controller="Requests" asp-action="Submit"
+                               class="btn btn-byui btn-sm">
+                                <i class="bi bi-plus me-1"></i>Add Materials
+                            </a>
+                            <a asp-controller="Courses" asp-action="Materials"
+                               asp-route-course="@Model.CourseNumber" asp-route-tab="copy"
+                               class="btn btn-outline-secondary btn-sm">
+                                <i class="bi bi-arrow-repeat me-1"></i>Copy Previous Adoption
+                            </a>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var item in req.Items.OrderBy(i => i.Title))
+                    {
+                        <div class="book-card">
+                            <!-- Cover thumbnail -->
+                            <div class="book-card-cover">
+                                <div class="cover-placeholder">
+                                    <i class="bi bi-book"></i>
+                                </div>
+                            </div>
+
+                            <!-- Center info -->
+                            <div class="book-card-center">
+                                <div class="book-title">@(item.Title ?? "(No Title)")</div>
+                                <div class="book-author">@(item.Author ?? "")</div>
+
+                                <div class="book-meta-row">
+                                    @if (!string.IsNullOrWhiteSpace(item.Isbn))
+                                    {
+                                        <div class="book-meta-item">
+                                            <strong>ADOPTED ISBN:</strong> @item.Isbn
+                                        </div>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(item.Publisher))
+                                    {
+                                        <div class="book-meta-item">
+                                            <strong>PUBLISHER:</strong> @item.Publisher
+                                        </div>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(item.Edition))
+                                    {
+                                        <div class="book-meta-item">
+                                            <strong>EDITION:</strong> @item.Edition
+                                        </div>
+                                    }
+                                    @if (item.PublicationYear.HasValue)
+                                    {
+                                        <div class="book-meta-item">
+                                            <strong>PUBLICATION DATE:</strong> @item.PublicationYear
+                                        </div>
+                                    }
+                                </div>
+
+                                <div class="book-links">
+                                    @if (!string.IsNullOrWhiteSpace(item.Isbn))
+                                    {
+                                        <a class="book-link"
+                                           href="https://www.vitalsource.com/search?term=@Uri.EscapeDataString(item.Isbn)"
+                                           target="_blank">
+                                            VIEW ON ITEMS PAGE
+                                        </a>
+                                        <a class="book-link"
+                                           href="https://www.amazon.com/s?k=@Uri.EscapeDataString(item.Isbn)&i=stripbooks"
+                                           target="_blank">
+                                            AMAZON
+                                        </a>
+                                    }
+                                </div>
+                            </div>
+
+                            <!-- Right panel -->
+                            <div class="book-card-right">
+                                <!-- Remove from list -->
+                                @if (item.RemovalRequestedAt.HasValue)
+                                {
+                                    <div class="btn-removal-requested">
+                                        <i class="bi bi-hourglass-split"></i>
+                                        REMOVAL REQUESTED
+                                    </div>
+                                    <div style="font-size:9px;color:#b45309;text-align:center;">
+                                        Requested @item.RemovalRequestedAt.Value.ToString("MMM dd, yyyy")
+                                    </div>
+                                }
+                                else if (canDeleteDirectly)
+                                {
+                                    <button class="btn-remove"
+                                            onclick="openRemoveModal(@item.Id, @Json.Serialize(item.Title ?? ""), 'direct')">
+                                        <i class="bi bi-x"></i> REMOVE FROM LIST
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button class="btn-remove"
+                                            onclick="openRemoveModal(@item.Id, @Json.Serialize(item.Title ?? ""), 'request')">
+                                        <i class="bi bi-x"></i> REMOVE FROM LIST
+                                    </button>
+                                }
+
+                                <!-- Required/Optional -->
+                                <div>
+                                    <span class="@(item.IsRequired ? "badge-required" : "badge-optional")">
+                                        @(item.IsRequired ? "REQUIRED" : "OPTIONAL")
+                                    </span>
+                                </div>
+
+                                <!-- AUTO ACCESS -->
+                                <div>
+                                    <div class="auto-access-label">AUTO ACCESS</div>
+                                    @if (!string.IsNullOrWhiteSpace(item.Isbn))
+                                    {
+                                        <div class="digital-match-row digital-match-loading"
+                                             id="digital-@item.Id"
+                                             data-isbn="@item.Isbn.Replace("-", "").Trim()">
+                                            <span class="spinner-border spinner-border-sm" style="width:12px;height:12px;border-width:2px;"></span>
+                                            CHECKING…
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="digital-match-row digital-match-no">
+                                            <i class="bi bi-dash-circle"></i> NO ISBN
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    }
+                }
+            }
+
+            <!-- ════════════════════════════════════════════════════════ -->
+            @if (tab == "copy")
+            {
+                @if (!Model.PriorAdoptions.Any())
+                {
+                    <div class="mat-empty">
+                        <i class="bi bi-clock-history"></i>
+                        <p class="fw-semibold">No previous approved adoptions found for @Model.CourseNumber</p>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var prior in Model.PriorAdoptions)
+                    {
+                        <div class="prior-card">
+                            <div class="prior-card-header">
+                                <span style="font-size:13px;font-weight:800;color:#223;">
+                                    @prior.CourseName — Sec @(prior.Section ?? "?")
+                                </span>
+                                <span class="prior-semester-badge">@prior.Semester</span>
+                            </div>
+
+                            @if (!prior.Items.Any())
+                            {
+                                <p style="font-size:12px;color:#99a;margin:0;">No items in this adoption.</p>
+                            }
+                            else
+                            {
+                                @foreach (var item in prior.Items.Where(i => i.ItemType == ItemType.Book))
+                                {
+                                    <div class="book-card" style="margin-bottom:10px;">
+                                        <div class="book-card-cover">
+                                            <div class="cover-placeholder">
+                                                <i class="bi bi-book"></i>
+                                            </div>
+                                        </div>
+                                        <div class="book-card-center">
+                                            <div class="book-title">@(item.Title ?? "(No Title)")</div>
+                                            <div class="book-author">@(item.Author ?? "")</div>
+                                            <div class="book-meta-row">
+                                                @if (!string.IsNullOrWhiteSpace(item.Isbn))
+                                                {
+                                                    <div class="book-meta-item">
+                                                        <strong>ISBN:</strong> @item.Isbn
+                                                    </div>
+                                                }
+                                                @if (!string.IsNullOrWhiteSpace(item.Publisher))
+                                                {
+                                                    <div class="book-meta-item">
+                                                        <strong>PUBLISHER:</strong> @item.Publisher
+                                                    </div>
+                                                }
+                                                @if (!string.IsNullOrWhiteSpace(item.Edition))
+                                                {
+                                                    <div class="book-meta-item">
+                                                        <strong>EDITION:</strong> @item.Edition
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                        <div class="book-card-right">
+                                            <span class="@(item.IsRequired ? "badge-required" : "badge-optional")">
+                                                @(item.IsRequired ? "REQUIRED" : "OPTIONAL")
+                                            </span>
+                                            <!-- AUTO ACCESS for prior items -->
+                                            @if (!string.IsNullOrWhiteSpace(item.Isbn))
+                                            {
+                                                <div>
+                                                    <div class="auto-access-label">AUTO ACCESS</div>
+                                                    <div class="digital-match-row digital-match-loading"
+                                                         id="digital-prior-@item.Id"
+                                                         data-isbn="@item.Isbn.Replace("-", "").Trim()">
+                                                        <span class="spinner-border spinner-border-sm" style="width:12px;height:12px;border-width:2px;"></span>
+                                                        CHECKING…
+                                                    </div>
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+                }
+            }
+
+            <!-- ════════════════════════════════════════════════════════ -->
+            @if (tab == "messages")
+            {
+                <div class="mat-empty">
+                    <i class="bi bi-chat-square-text"></i>
+                    <p class="fw-semibold">Messages &amp; Activity</p>
+                    <p style="font-size:12px;">Activity log and messaging coming soon.</p>
+                </div>
+            }
+
+        </div><!-- /mat-tab-content -->
+    </div><!-- /mat-main -->
+</div><!-- /mat-body -->
+
+@section Scripts {
+<script>
+// ── Removal modal ─────────────────────────────────────────────────────────
+let pendingAction = 'direct';
+
+function openRemoveModal(itemId, title, action) {
+    pendingAction = action;
+    document.getElementById('removeModalItemId').value = itemId;
+
+    const body = document.getElementById('removeModalBody');
+    const form = document.getElementById('removeModalForm');
+
+    if (action === 'direct') {
+        body.innerHTML = `Are you sure you want to remove <strong>"${title}"</strong> from the list?<br><br>
+            <span style="color:#c0392b;font-size:12px;">This action cannot be undone.</span>`;
+        form.action = '@Url.Action("RemoveItem", "Courses")';
+    } else {
+        body.innerHTML = `<strong>"${title}"</strong> has already been reviewed by the material manager.<br><br>
+            A removal request email will be sent to the material manager on your behalf.
+            The item will stay visible with a <em>"Removal Requested"</em> badge until processed.`;
+        form.action = '@Url.Action("RequestRemoval", "Courses")';
+    }
+
+    document.getElementById('removeModal').classList.add('show');
+}
+
+function closeRemoveModal() {
+    document.getElementById('removeModal').classList.remove('show');
+}
+
+// Close on overlay click
+document.getElementById('removeModal').addEventListener('click', function(e) {
+    if (e.target === this) closeRemoveModal();
+});
+
+// ── Lazy AJAX digital-match check ────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function () {
+    const rows = document.querySelectorAll('[data-isbn]');
+    rows.forEach(function (row) {
+        const isbn = row.getAttribute('data-isbn');
+        if (!isbn) return;
+
+        fetch('/api/vitalsource-check?isbn=' + encodeURIComponent(isbn))
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (!data) {
+                    row.innerHTML = '<span class="digital-match-no"><i class="bi bi-dash-circle"></i> UNAVAILABLE</span>';
+                    return;
+                }
+                if (data.hasDigital) {
+                    row.className = 'digital-match-row digital-match-yes';
+                    row.innerHTML = '<i class="bi bi-check-circle-fill"></i> DIGITAL MATCH';
+                } else {
+                    row.className = 'digital-match-row digital-match-no';
+                    row.innerHTML = '<i class="bi bi-dash-circle"></i> NO DIGITAL';
+                }
+            })
+            .catch(() => {
+                row.innerHTML = '<span class="digital-match-no"><i class="bi bi-exclamation-circle"></i> CHECK FAILED</span>';
+            });
+    });
+});
+</script>
+}

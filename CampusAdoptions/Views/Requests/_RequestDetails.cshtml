@@ -1,0 +1,94 @@
+@model CampusAdoptions.Models.CourseRequest
+@using CampusAdoptions.Models
+
+<!-- Course Summary -->
+<div class="card mb-3">
+  <div class="card-header card-header-byui"><i class="bi bi-mortarboard me-2"></i>Course Information</div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-4">
+        <small class="text-muted d-block">Course Number</small>
+        <strong>@Model.CourseNumber</strong>@(Model.Section is not null ? $" — Section {Model.Section}" : "")
+      </div>
+      <div class="col-md-4">
+        <small class="text-muted d-block">Course Name</small>
+        <strong>@Model.CourseName</strong>
+      </div>
+      <div class="col-md-2">
+        <small class="text-muted d-block">Semester</small>
+        <strong>@Model.Semester</strong>
+      </div>
+      <div class="col-md-2">
+        <small class="text-muted d-block">Submitted By</small>
+        <strong>@Model.Submitter?.FullName</strong>
+        <br/><small class="text-muted">@Model.SubmittedAt.ToString("MMM d, yyyy")</small>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Items -->
+<div class="card">
+  <div class="card-header card-header-byui">
+    <i class="bi bi-list-check me-2"></i>Items
+    <span class="badge bg-light text-dark ms-2">@Model.Items.Count total</span>
+    <span class="badge bg-primary ms-1">@Model.Items.Count(i => i.ItemType == ItemType.Book) book(s)</span>
+    <span class="badge bg-secondary ms-1">@Model.Items.Count(i => i.ItemType == ItemType.Supply) supply(s)</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>#</th>
+          <th>Type</th>
+          <th>Title / Description</th>
+          <th>Author</th>
+          <th>ISBN</th>
+          <th>Publisher</th>
+          <th>Edition</th>
+          <th>Quantity</th>
+          <th>Required</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        @{int row = 1;}
+        @foreach (var item in Model.Items)
+        {
+          <tr>
+            <td class="text-muted small">@(row++)</td>
+            <td>
+              @if (item.ItemType == ItemType.Book)
+              { <span class="badge bg-primary"><i class="bi bi-book me-1"></i>Book</span> }
+              else
+              { <span class="badge bg-secondary"><i class="bi bi-box-seam me-1"></i>Supply</span> }
+            </td>
+            <td>
+              @if (item.ItemType == ItemType.Book)
+              { <strong>@item.Title</strong> }
+              else
+              { @item.SupplyDescription }
+            </td>
+            <td>@item.Author</td>
+            <td>
+              @if (!string.IsNullOrEmpty(item.Isbn))
+              { <code class="text-success fw-bold">@item.Isbn</code> }
+              else
+              { <span class="text-muted small">—</span> }
+            </td>
+            <td><small>@item.Publisher</small></td>
+            <td><small>@item.Edition</small></td>
+            <td>@item.Quantity</td>
+            <td>
+              @if (item.IsRequired)
+              { <i class="bi bi-check-circle-fill text-success"></i> }
+              else
+              { <i class="bi bi-dash-circle text-muted"></i> }
+            </td>
+            <td><small class="text-muted">@item.Notes</small></td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</div>
