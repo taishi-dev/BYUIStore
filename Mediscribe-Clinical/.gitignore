@@ -1,0 +1,25 @@
+## .NET / ASP.NET Core
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.db
+*.db-shm
+*.db-wal
+
+## Secrets
+appsettings.Development.json
+appsettings.Production.json
+secrets.json
+
+## OS
+.DS_Store
+Thumbs.db
+
+## Python (app.py leftovers)
+__pycache__/
+*.pyc
+*.pyo
+.env
+venv/
