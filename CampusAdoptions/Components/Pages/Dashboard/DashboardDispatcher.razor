@@ -1,0 +1,27 @@
+@page "/dashboard"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+@using System.Security.Claims
+
+@inject NavigationManager Navigation
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is null) return;
+        var state = await AuthState;
+        var role = state.User.FindFirst(ClaimTypes.Role)?.Value;
+
+        var target = role switch
+        {
+            "Professor"       => "/courses/my",
+            "OfficeManager"   => "/dashboard/office-manager",
+            "MaterialManager" => "/dashboard/material-manager",
+            _                 => "/Account/Login"
+        };
+        Navigation.NavigateTo(target);
+    }
+}

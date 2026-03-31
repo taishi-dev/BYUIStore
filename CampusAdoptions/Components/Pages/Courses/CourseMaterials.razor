@@ -1,0 +1,414 @@
+@page "/courses/materials"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+@using CampusAdoptions.Data
+@using Microsoft.EntityFrameworkCore
+@using System.Security.Claims
+
+@inject AppDbContext Db
+@inject BookAvailabilityService AvailabilityService
+@inject IEmailService EmailService
+@inject IConfiguration Config
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+@inject ILogger<CourseMaterials> Logger
+
+<PageTitle>@_vm.CourseNumber — Materials</PageTitle>
+
+<!-- Top bar -->
+<MudPaper Elevation="1" Class="pa-3 mb-3 d-flex align-center gap-3">
+    <MudButton Href="/courses" Variant="Variant.Text" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.ArrowBack" Size="Size.Small">
+        BACK TO COURSES
+    </MudButton>
+    <MudDivider Vertical="true" FlexItem="true" />
+    <MudText Typo="Typo.subtitle1" Style="font-weight:800;">@_vm.CourseNumber</MudText>
+    <MudText Typo="Typo.body2" Color="Color.Dark">@_vm.CourseName</MudText>
+    <MudSpacer />
+    @if (_vm.CurrentRequest is not null)
+    {
+        <StatusBadge Status="@_vm.CurrentRequest.Status.ToString()" />
+    }
+    else
+    {
+        <MudChip T="string" Size="Size.Small" Color="Color.Default">NO SUBMISSION FOR @_vm.CurrentSemester.ToUpper()</MudChip>
+    }
+</MudPaper>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else
+{
+    <MudGrid>
+        <!-- Left panel -->
+        <MudItem xs="12" md="3">
+            <MudPaper Elevation="2" Class="pa-4">
+                <MudText Typo="Typo.overline">Course</MudText>
+                <MudText Typo="Typo.body1" Style="font-weight:600;">@_vm.CourseNumber</MudText>
+
+                <MudText Typo="Typo.overline" Class="mt-3">Course Name</MudText>
+                <MudText Typo="Typo.body1">@_vm.CourseName</MudText>
+
+                <MudText Typo="Typo.overline" Class="mt-3">Semester</MudText>
+                <MudText Typo="Typo.body1">@_vm.CurrentSemester</MudText>
+
+                @if (_vm.CurrentRequest is not null)
+                {
+                    <MudDivider Class="my-3" />
+                    <MudText Typo="Typo.overline">Section</MudText>
+                    <MudText Typo="Typo.body1">@(_vm.CurrentRequest.Section ?? "—")</MudText>
+
+                    <MudText Typo="Typo.overline" Class="mt-2">Instructor</MudText>
+                    <MudText Typo="Typo.body1">@(_vm.CurrentRequest.Submitter?.FullName ?? "—")</MudText>
+
+                    <MudText Typo="Typo.overline" Class="mt-2">Submitted</MudText>
+                    <MudText Typo="Typo.body2">@_vm.CurrentRequest.SubmittedAt.ToString("MMM dd, yyyy")</MudText>
+                }
+
+                @if (_vm.PriorAdoptions.Any())
+                {
+                    <MudDivider Class="my-3" />
+                    <MudText Typo="Typo.overline">Previous Adoptions</MudText>
+                    @foreach (var prior in _vm.PriorAdoptions)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Info" Class="mt-1">
+                            @prior.Semester — @prior.Items.Count item(s)
+                        </MudChip>
+                    }
+                }
+            </MudPaper>
+        </MudItem>
+
+        <!-- Main content -->
+        <MudItem xs="12" md="9">
+            <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true">
+                <!-- Tab 1: Selected Materials -->
+                <MudTabPanel Text="Selected Materials" BadgeData="@_vm.CurrentRequest?.Items.Count.ToString()" BadgeColor="Color.Primary">
+                    @if (_vm.CurrentRequest is null || !_vm.CurrentRequest.Items.Any())
+                    {
+                        <div class="pa-8 text-center">
+                            <MudIcon Icon="@Icons.Material.Filled.MenuBook" Style="font-size:3rem;" Color="Color.Dark" />
+                            <MudText Typo="Typo.h6" Class="mt-3" Color="Color.Dark">No materials selected yet.</MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Dark">
+                                Use the "Add Materials" tab to search and add books or supplies.
+                            </MudText>
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var item in _vm.CurrentRequest.Items)
+                        {
+                            <MudCard Elevation="1" Class="mb-3">
+                                <MudCardContent>
+                                    <div class="d-flex gap-4">
+                                        <!-- Book info -->
+                                        <div style="flex:1;">
+                                            <MudText Typo="Typo.subtitle1" Style="font-weight:800; text-transform:uppercase;">
+                                                @item.Title
+                                            </MudText>
+                                            <MudText Typo="Typo.body2" Color="Color.Dark" Class="mb-2">@item.Author</MudText>
+
+                                            <div class="d-flex gap-4 flex-wrap mb-2">
+                                                @if (!string.IsNullOrEmpty(item.Isbn))
+                                                {
+                                                    <MudText Typo="Typo.caption"><strong>ISBN:</strong> @item.Isbn</MudText>
+                                                }
+                                                @if (!string.IsNullOrEmpty(item.Publisher))
+                                                {
+                                                    <MudText Typo="Typo.caption"><strong>Publisher:</strong> @item.Publisher</MudText>
+                                                }
+                                                @if (!string.IsNullOrEmpty(item.Edition))
+                                                {
+                                                    <MudText Typo="Typo.caption"><strong>Edition:</strong> @item.Edition</MudText>
+                                                }
+                                                @if (item.PublicationYear.HasValue)
+                                                {
+                                                    <MudText Typo="Typo.caption"><strong>Year:</strong> @item.PublicationYear</MudText>
+                                                }
+                                            </div>
+
+                                            <MudChip T="string" Size="Size.Small"
+                                                     Color="@(item.IsRequired ? Color.Success : Color.Default)">
+                                                @(item.IsRequired ? "REQUIRED" : "OPTIONAL")
+                                            </MudChip>
+
+                                            @if (item.ItemType == ItemType.Supply)
+                                            {
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Secondary">SUPPLY</MudChip>
+                                            }
+                                        </div>
+
+                                        <!-- Right panel: digital match + actions -->
+                                        <div style="width:200px; flex-shrink:0;">
+                                            @if (!string.IsNullOrEmpty(item.Isbn))
+                                            {
+                                                <MudText Typo="Typo.overline" Style="font-size:9px;">AUTO ACCESS</MudText>
+                                                @if (_digitalChecks.TryGetValue(item.Isbn, out var check))
+                                                {
+                                                    @if (check.HasDigital)
+                                                    {
+                                                        <MudText Typo="Typo.body2" Color="Color.Success" Style="font-weight:700;">
+                                                            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" />
+                                                            DIGITAL MATCH
+                                                        </MudText>
+                                                    }
+                                                    else
+                                                    {
+                                                        <MudText Typo="Typo.body2" Color="Color.Dark" Style="font-weight:700;">
+                                                            <MudIcon Icon="@Icons.Material.Filled.RemoveCircle" Size="Size.Small" />
+                                                            NO DIGITAL
+                                                        </MudText>
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+                                                }
+                                            }
+
+                                            <MudDivider Class="my-2" />
+
+                                            @if (item.RemovalRequestedAt.HasValue)
+                                            {
+                                                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">
+                                                    Removal requested
+                                                </MudAlert>
+                                            }
+                                            else if (_canDeleteDirectly)
+                                            {
+                                                <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small"
+                                                           FullWidth="true"
+                                                           StartIcon="@Icons.Material.Filled.Delete"
+                                                           OnClick="() => RemoveItem(item)">
+                                                    REMOVE FROM LIST
+                                                </MudButton>
+                                            }
+                                            else
+                                            {
+                                                <MudButton Variant="Variant.Outlined" Color="Color.Warning" Size="Size.Small"
+                                                           FullWidth="true"
+                                                           StartIcon="@Icons.Material.Filled.Email"
+                                                           OnClick="() => RequestRemoval(item)">
+                                                    REQUEST REMOVAL
+                                                </MudButton>
+                                            }
+                                        </div>
+                                    </div>
+                                </MudCardContent>
+                            </MudCard>
+                        }
+                    }
+                </MudTabPanel>
+
+                <!-- Tab 2: Copy Another Adoption -->
+                <MudTabPanel Text="Copy Another Adoption">
+                    @if (!_vm.PriorAdoptions.Any())
+                    {
+                        <div class="pa-8 text-center">
+                            <MudIcon Icon="@Icons.Material.Filled.ContentCopy" Style="font-size:3rem;" Color="Color.Dark" />
+                            <MudText Typo="Typo.h6" Class="mt-3" Color="Color.Dark">No prior adoptions found.</MudText>
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var prior in _vm.PriorAdoptions)
+                        {
+                            <MudCard Elevation="1" Class="mb-3">
+                                <MudCardHeader>
+                                    <CardHeaderContent>
+                                        <MudText Typo="Typo.subtitle1" Style="font-weight:600;">@prior.Semester</MudText>
+                                        <MudText Typo="Typo.caption" Color="Color.Dark">
+                                            Submitted by @prior.Submitter?.FullName — @prior.Items.Count item(s)
+                                        </MudText>
+                                    </CardHeaderContent>
+                                </MudCardHeader>
+                                <MudCardContent>
+                                    <MudTable Items="prior.Items" Dense="true" Hover="true" Elevation="0">
+                                        <HeaderContent>
+                                            <MudTh>Title</MudTh>
+                                            <MudTh>Author</MudTh>
+                                            <MudTh>ISBN</MudTh>
+                                            <MudTh>Required</MudTh>
+                                        </HeaderContent>
+                                        <RowTemplate>
+                                            <MudTd>@context.Title</MudTd>
+                                            <MudTd>@context.Author</MudTd>
+                                            <MudTd>@context.Isbn</MudTd>
+                                            <MudTd>
+                                                <MudChip T="string" Size="Size.Small"
+                                                         Color="@(context.IsRequired ? Color.Success : Color.Default)">
+                                                    @(context.IsRequired ? "Required" : "Optional")
+                                                </MudChip>
+                                            </MudTd>
+                                        </RowTemplate>
+                                    </MudTable>
+                                </MudCardContent>
+                            </MudCard>
+                        }
+                    }
+                </MudTabPanel>
+
+                <!-- Tab 3: Add Materials (placeholder) -->
+                <MudTabPanel Text="Add Materials">
+                    <div class="pa-8 text-center">
+                        <MudIcon Icon="@Icons.Material.Filled.Add" Style="font-size:3rem;" Color="Color.Primary" />
+                        <MudText Typo="Typo.h6" Class="mt-3">Add New Materials</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Dark" Class="mb-4">
+                            Use the full request form to add books or supplies to this course.
+                        </MudText>
+                        <MudButton Href="@($"/requests/submit?course={Uri.EscapeDataString(_vm.CourseNumber)}")"
+                                   Variant="Variant.Filled" Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Add">
+                            Submit New Request
+                        </MudButton>
+                    </div>
+                </MudTabPanel>
+            </MudTabs>
+        </MudItem>
+    </MudGrid>
+}
+
+<MudMessageBox @ref="_removeBox" Title="Remove from List" CancelText="Cancel">
+    <MessageContent>
+        <MudText>@_removeMessage</MudText>
+    </MessageContent>
+    <YesButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.Delete">Yes, Remove It</MudButton>
+    </YesButton>
+</MudMessageBox>
+
+@code {
+    [SupplyParameterFromQuery] public string? Course { get; set; }
+
+    private bool _loading = true;
+    private bool _canDeleteDirectly;
+    private CourseMaterialsViewModel _vm = new();
+    private Dictionary<string, DigitalCheckResult> _digitalChecks = new();
+    private MudMessageBox _removeBox = default!;
+    private string _removeMessage = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Course))
+        {
+            Navigation.NavigateTo("/courses");
+            return;
+        }
+
+        const string currentSemester = "Spring 2026";
+
+        var currentRequest = await Db.CourseRequests
+            .Include(r => r.Items)
+            .Include(r => r.Submitter)
+            .FirstOrDefaultAsync(r => r.CourseNumber == Course && r.Semester == currentSemester);
+
+        var priorAdoptions = await Db.CourseRequests
+            .Include(r => r.Items)
+            .Include(r => r.Submitter)
+            .Where(r => r.CourseNumber == Course && r.Semester != currentSemester && r.Status == RequestStatus.Approved)
+            .OrderByDescending(r => r.Semester)
+            .ToListAsync();
+
+        _vm = new CourseMaterialsViewModel
+        {
+            CourseNumber = Course,
+            CourseName = currentRequest?.CourseName ?? priorAdoptions.FirstOrDefault()?.CourseName ?? Course,
+            CurrentSemester = currentSemester,
+            CurrentRequest = currentRequest,
+            PriorAdoptions = priorAdoptions,
+            ActiveTab = "selected"
+        };
+
+        _canDeleteDirectly = currentRequest?.Status == RequestStatus.PendingVerification;
+        _loading = false;
+
+        // Fire-and-forget digital availability checks for each ISBN
+        _ = CheckDigitalAvailabilityAsync();
+    }
+
+    private async Task CheckDigitalAvailabilityAsync()
+    {
+        if (_vm.CurrentRequest?.Items is null) return;
+
+        var isbns = _vm.CurrentRequest.Items
+            .Where(i => !string.IsNullOrEmpty(i.Isbn))
+            .Select(i => i.Isbn!)
+            .Distinct()
+            .ToList();
+
+        var tasks = isbns.Select(async isbn =>
+        {
+            try
+            {
+                var result = await AvailabilityService.CheckSingleIsbnAsync(isbn);
+                return (Isbn: isbn, Result: new DigitalCheckResult
+                {
+                    HasDigital = result?.DigitalAvailableOnVitalSource == true || result?.EbookAvailableOnGoogle == true
+                });
+            }
+            catch
+            {
+                return (Isbn: isbn, Result: new DigitalCheckResult { HasDigital = false });
+            }
+        });
+
+        foreach (var task in tasks)
+        {
+            var pair = await task;
+            _digitalChecks[pair.Isbn] = pair.Result;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task RemoveItem(RequestItem item)
+    {
+        _removeMessage = $"Are you sure you want to remove \"{item.Title}\" from the list?";
+        var confirmed = await _removeBox.ShowAsync();
+        if (confirmed != true) return;
+
+        Db.RequestItems.Remove(item);
+
+        var remainingCount = await Db.RequestItems
+            .CountAsync(i => i.CourseRequestId == item.CourseRequestId && i.Id != item.Id);
+        if (remainingCount == 0 && _vm.CurrentRequest is not null)
+            Db.CourseRequests.Remove(_vm.CurrentRequest);
+
+        await Db.SaveChangesAsync();
+        Snackbar.Add($"\"{item.Title}\" has been removed.", Severity.Success);
+        Navigation.NavigateTo($"/courses/materials?course={Uri.EscapeDataString(_vm.CourseNumber)}", forceLoad: true);
+    }
+
+    private async Task RequestRemoval(RequestItem item)
+    {
+        _removeMessage = $"Request removal of \"{item.Title}\"? An email will be sent to the material manager.";
+        var confirmed = await _removeBox.ShowAsync();
+        if (confirmed != true) return;
+
+        item.RemovalRequestedAt = DateTime.UtcNow;
+        await Db.SaveChangesAsync();
+
+        var managerEmail = Config["Email:ManagerAddress"] ?? "manager@byui.edu";
+        var subject = $"[BYUI Bookstore] Removal Request — {item.Title} from {_vm.CourseNumber}";
+        var body = $"<p>A removal has been requested for <strong>{item.Title}</strong> (ISBN: {item.Isbn}) from {_vm.CourseNumber}.</p>";
+
+        try
+        {
+            await EmailService.SendAsync(managerEmail, "Material Manager", subject, body);
+            Snackbar.Add($"Removal request for \"{item.Title}\" sent.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to send removal email for item {ItemId}", item.Id);
+            Snackbar.Add("Removal saved but email failed. Contact the manager directly.", Severity.Warning);
+        }
+
+        StateHasChanged();
+    }
+
+    private class DigitalCheckResult
+    {
+        public bool HasDigital { get; set; }
+    }
+}

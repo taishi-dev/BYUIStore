@@ -1,0 +1,259 @@
+@page "/"
+@page "/courses"
+@rendermode InteractiveServer
+@using CampusAdoptions.Models.Verba
+@using CampusAdoptions.Services
+@inject CourseService CourseService
+@inject NavigationManager Nav
+
+<!-- Top navigation -->
+<nav class="top-nav">
+    <a class="top-nav__brand" href="/">BYU IDAHO UNIVERSITY STORE</a>
+    <div class="top-nav__links">
+        <a class="top-nav__link top-nav__link--active" href="/courses">COURSES</a>
+        <a class="top-nav__link" href="#">ITEMS</a>
+        <a class="top-nav__link" href="#">DEPARTMENTS</a>
+        <a class="top-nav__link" href="#">USERS</a>
+    </div>
+    <div class="top-nav__right">
+        <button class="btn-help">GET HELP</button>
+    </div>
+</nav>
+
+<!-- Page header -->
+<div class="page-header">
+    <span class="page-header__title">SPRING 2026</span>
+    <span class="page-header__separator">/</span>
+    <span class="page-header__title">COURSES</span>
+    <select>
+        <option>SPRING 2026</option>
+        <option>WINTER 2026</option>
+        <option>FALL 2025</option>
+    </select>
+    <button class="btn-verba" style="border-color: rgba(255,255,255,0.3); color: white;">TERM SETTINGS</button>
+</div>
+
+<!-- Progress bar -->
+<div class="progress-bar-row">
+    @{ var total = _summary.Incomplete + _summary.Submitted + _summary.Reviewed + _summary.Approved; }
+    @if (_summary.Incomplete > 0)
+    {
+        <div class="progress-segment progress-segment--incomplete"
+             style="width: @($"{(double)_summary.Incomplete / total * 100:F1}%")">
+            <span class="progress-segment__count">@_summary.Incomplete</span> INCOMPLETE
+        </div>
+    }
+    @if (_summary.Submitted > 0)
+    {
+        <div class="progress-segment progress-segment--submitted"
+             style="width: @($"{(double)_summary.Submitted / total * 100:F1}%")">
+            <span class="progress-segment__count">@_summary.Submitted</span> SUBMITTED
+        </div>
+    }
+    @if (_summary.Reviewed > 0)
+    {
+        <div class="progress-segment progress-segment--reviewed"
+             style="width: @($"{(double)_summary.Reviewed / total * 100:F1}%")">
+            <span class="progress-segment__count">@_summary.Reviewed</span> REVIEWED
+        </div>
+    }
+    @if (_summary.Approved > 0)
+    {
+        <div class="progress-segment progress-segment--approved"
+             style="width: @($"{(double)_summary.Approved / total * 100:F1}%")">
+            <span class="progress-segment__count">@_summary.Approved</span> APPROVED
+        </div>
+    }
+</div>
+
+<!-- Action toast notification -->
+@if (!string.IsNullOrEmpty(_actionToast))
+{
+    <div class="action-toast" @onclick="() => _actionToast = null">
+        <span class="action-toast__icon">&#9989;</span>
+        @_actionToast
+        <button class="action-toast__close">&times;</button>
+    </div>
+}
+
+<!-- Two-column layout -->
+<div class="page-layout">
+    <!-- Left sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar__search">
+            <input type="text" placeholder="Search courses..." @bind="_searchTerm" @bind:event="oninput" />
+        </div>
+        <div class="sidebar__filter">
+            <select @bind="_selectedDepartment" @bind:after="OnFilterChanged">
+                <option value="ALL">FILTER BY DEPARTMENT</option>
+                @foreach (var dept in _departments)
+                {
+                    <option value="@dept">@dept</option>
+                }
+            </select>
+        </div>
+        <div class="sidebar__filter">
+            <select>
+                <option>FILTER BY USER</option>
+            </select>
+        </div>
+        <ul class="sidebar__nav">
+            @foreach (var filter in _quickFilters)
+            {
+                <li class="sidebar__nav-item @(filter == _activeFilter ? "sidebar__nav-item--active" : "")"
+                    @onclick="() => SetFilter(filter)">
+                    @filter
+                </li>
+            }
+        </ul>
+    </aside>
+
+    <!-- Main content -->
+    <div class="main-content">
+        <div class="course-list-header">
+            <span>VIEWING @_filteredCourses.Count COURSES</span>
+            <div class="btn-dropdown">
+                <button class="btn-verba" @onclick="ToggleCourseActions" @onclick:stopPropagation>
+                    COURSE ACTIONS &#9662;
+                </button>
+                @if (_showCourseActions)
+                {
+                    <div class="btn-dropdown__backdrop" @onclick="CloseCourseActions"></div>
+                    <div class="btn-dropdown__menu btn-dropdown__menu--open">
+                        <button class="btn-dropdown__item" @onclick="OnManageUsers">Manage Users</button>
+                        <button class="btn-dropdown__item" @onclick="OnEditCourseAttributes">Edit Course Attributes</button>
+                        <button class="btn-dropdown__item" @onclick="OnPushToBackOffice">Push to Back Office</button>
+                        <button class="btn-dropdown__item" @onclick="OnAddSection">Add Section</button>
+                        <button class="btn-dropdown__item" @onclick="OnFacultyViews">Faculty Views</button>
+                        <button class="btn-dropdown__item" @onclick="OnPrintAdoption">Print Adoption</button>
+                    </div>
+                }
+            </div>
+        </div>
+
+        @foreach (var course in _filteredCourses)
+        {
+            <CampusAdoptions.Components.Shared.CourseRow
+                Course="course"
+                IsExpanded="_expandedCourses.Contains(course.Id)"
+                OnToggle="() => ToggleCourse(course.Id)"
+                OnCourseSelected="() => NavigateToCourse(course.Id)"
+                OnActionSelected="(action) => ShowCourseActionToast(action, course.Name)" />
+        }
+    </div>
+</div>
+
+@code {
+    private TermSummary _summary = new(0, 0, 0, 0, 0);
+    private List<VerbaCourse> _filteredCourses = new();
+    private List<string> _departments = new();
+    private HashSet<string> _expandedCourses = new();
+    private string _searchTerm = "";
+    private string _selectedDepartment = "ALL";
+    private string _activeFilter = "ALL SECTIONS";
+    private bool _showCourseActions;
+    private string? _actionToast;
+
+    private readonly string[] _quickFilters =
+    {
+        "ALL SECTIONS", "SECTIONS TO EMAIL", "SECTIONS TO APPROVE",
+        "NEW SECTIONS TO PUSH", "SECTIONS TO PRINT/EXPORT",
+        "AUTO ACCESS INTEREST", "NO TEXT REQUIRED", "SECTIONS WITH MESSAGES"
+    };
+
+    protected override void OnInitialized()
+    {
+        _summary = CourseService.GetTermSummary();
+        _departments = CourseService.GetDepartments();
+        RefreshCourses();
+    }
+
+    private void RefreshCourses()
+    {
+        _filteredCourses = CourseService.GetCourses(
+            string.IsNullOrWhiteSpace(_searchTerm) ? null : _searchTerm,
+            _selectedDepartment == "ALL" ? null : _selectedDepartment);
+    }
+
+    private void OnFilterChanged()
+    {
+        RefreshCourses();
+    }
+
+    private void SetFilter(string filter)
+    {
+        _activeFilter = filter;
+        // For demo, only "NO TEXT REQUIRED" actually filters
+        if (filter == "NO TEXT REQUIRED")
+        {
+            _filteredCourses = CourseService.GetCourses(_searchTerm, _selectedDepartment == "ALL" ? null : _selectedDepartment)
+                .Where(c => c.NoTextRequired).ToList();
+        }
+        else
+        {
+            RefreshCourses();
+        }
+    }
+
+    private void ToggleCourse(string courseId)
+    {
+        if (!_expandedCourses.Remove(courseId))
+            _expandedCourses.Add(courseId);
+    }
+
+    private void ToggleCourseActions()
+    {
+        _showCourseActions = !_showCourseActions;
+    }
+
+    private void CloseCourseActions()
+    {
+        _showCourseActions = false;
+    }
+
+    private void NavigateToCourse(string courseId)
+    {
+        Nav.NavigateTo($"/courses/{courseId}");
+    }
+
+    private void ShowToast(string message)
+    {
+        _actionToast = message;
+        _showCourseActions = false;
+    }
+
+    private void ShowCourseActionToast(string action, string courseName)
+    {
+        _actionToast = $"{action} — {courseName}";
+    }
+
+    private void OnManageUsers()
+    {
+        ShowToast("Manage Users — opening user management for the current term.");
+    }
+
+    private void OnEditCourseAttributes()
+    {
+        ShowToast("Edit Course Attributes — select a course to edit its attributes.");
+    }
+
+    private void OnPushToBackOffice()
+    {
+        ShowToast("Push to Back Office — all approved courses will be pushed to the back office system.");
+    }
+
+    private void OnAddSection()
+    {
+        ShowToast("Add Section — select a course to add a new section.");
+    }
+
+    private void OnFacultyViews()
+    {
+        ShowToast("Faculty Views — generating faculty adoption view for the current term.");
+    }
+
+    private void OnPrintAdoption()
+    {
+        ShowToast("Print Adoption — preparing adoption report for download.");
+    }
+}

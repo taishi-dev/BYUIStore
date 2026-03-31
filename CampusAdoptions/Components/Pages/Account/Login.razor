@@ -1,0 +1,124 @@
+@page "/Account/Login"
+@layout LoginLayout
+@using CampusAdoptions.Data
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.Cookies
+@using Microsoft.EntityFrameworkCore
+@using System.Security.Claims
+
+@inject AppDbContext Db
+@inject NavigationManager Navigation
+
+<MudPaper Elevation="4" Class="pa-8" Style="width:380px; border-radius:12px;">
+    <div class="d-flex flex-column align-center mb-4">
+        <div class="d-flex align-baseline gap-2">
+            <MudText Typo="Typo.h4" Style="font-weight:800; color:#1c2236;">BYU</MudText>
+            <MudText Typo="Typo.caption" Style="font-weight:600; letter-spacing:3px; color:#889; text-transform:uppercase;">IDAHO</MudText>
+        </div>
+        <MudDivider Class="my-1" Style="width:60%;" />
+        <MudText Typo="Typo.caption" Style="font-weight:600; letter-spacing:2px; color:#667; text-transform:uppercase;">
+            UNIVERSITY STORE
+        </MudText>
+    </div>
+
+    <MudText Typo="Typo.subtitle2" Align="Align.Center" Class="mb-4"
+             Style="font-weight:700; color:#334; letter-spacing:.5px;">
+        VERBA COLLECT
+    </MudText>
+
+    @if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-3" Dense="true">@_errorMessage</MudAlert>
+    }
+
+    <form method="post" @formname="login" @onsubmit="HandleLogin">
+        <AntiforgeryToken />
+
+        <MudTextField @bind-Value="Model!.Username"
+                      Label="USERNAME" Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Placeholder="Enter your username"
+                      Class="mb-3"
+                      Style="font-size:12px;"
+                      name="Model.Username" />
+
+        <MudTextField @bind-Value="Model.Password"
+                      Label="PASSWORD" Variant="Variant.Outlined" Margin="Margin.Dense"
+                      InputType="InputType.Password"
+                      Placeholder="Enter your password"
+                      Class="mb-4"
+                      Style="font-size:12px;"
+                      name="Model.Password" />
+
+        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled"
+                   FullWidth="true"
+                   Style="background:#1c2236; color:white; font-weight:700; letter-spacing:.8px; font-size:12px;">
+            SIGN IN
+        </MudButton>
+    </form>
+
+    <MudText Typo="Typo.caption" Align="Align.Center" Class="mt-6" Style="color:#aab; letter-spacing:.3px;">
+        Demo accounts — all use password: <b>byui1234</b><br />
+        <code style="font-size:10px;">prof_smith</code> &middot;
+        <code style="font-size:10px;">coord_lee</code> &middot;
+        <code style="font-size:10px;">manager_jones</code> &middot;
+        <code style="font-size:10px;">staff_brown</code>
+    </MudText>
+</MudPaper>
+
+@code {
+    [CascadingParameter]
+    public HttpContext? HttpContext { get; set; }
+
+    [SupplyParameterFromForm]
+    public LoginViewModel? Model { get; set; }
+
+    [SupplyParameterFromQuery]
+    public string? ReturnUrl { get; set; }
+
+    private string? _errorMessage;
+
+    protected override void OnInitialized()
+    {
+        Model ??= new();
+
+        if (HttpContext?.User.Identity?.IsAuthenticated == true)
+        {
+            Navigation.NavigateTo("/", forceLoad: true);
+        }
+    }
+
+    private async Task HandleLogin()
+    {
+        if (string.IsNullOrWhiteSpace(Model!.Username) || string.IsNullOrWhiteSpace(Model.Password))
+        {
+            _errorMessage = "Username and password are required.";
+            return;
+        }
+
+        var user = await Db.Users
+            .FirstOrDefaultAsync(u => u.Username == Model.Username && u.PasswordHash == Model.Password);
+
+        if (user is null)
+        {
+            _errorMessage = "Invalid username or password.";
+            return;
+        }
+
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new(ClaimTypes.Name, user.Username),
+            new("FullName", user.FullName),
+            new(ClaimTypes.Role, user.Role),
+        };
+
+        var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+        var principal = new ClaimsPrincipal(identity);
+
+        await HttpContext!.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal,
+            new AuthenticationProperties { IsPersistent = true, ExpiresUtc = DateTimeOffset.UtcNow.AddHours(8) });
+
+        var redirectUrl = !string.IsNullOrEmpty(ReturnUrl) && ReturnUrl.StartsWith('/') ? ReturnUrl : "/";
+        Navigation.NavigateTo(redirectUrl, forceLoad: true);
+    }
+}

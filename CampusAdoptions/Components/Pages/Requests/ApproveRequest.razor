@@ -1,0 +1,465 @@
+@page "/requests/approve/{Id:int}"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "MaterialManager")]
+@rendermode InteractiveServer
+@using CampusAdoptions.Data
+@using Microsoft.EntityFrameworkCore
+@using System.Security.Claims
+
+@inject AppDbContext Db
+@inject BookAvailabilityService AvailabilityService
+@inject MaterialReviewService ReviewService
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+
+<PageTitle>Approve Request #@Id</PageTitle>
+
+<MudPaper Elevation="1" Class="pa-3 mb-4 d-flex align-center gap-3">
+    <MudButton Href="/dashboard" Variant="Variant.Text" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.ArrowBack" Size="Size.Small">
+        BACK TO DASHBOARD
+    </MudButton>
+    <MudDivider Vertical="true" FlexItem="true" />
+    <MudText Typo="Typo.h6" Style="font-weight:700;">
+        <MudIcon Icon="@Icons.Material.Filled.FactCheck" Class="mr-2" />
+        Approve Request #@Id
+    </MudText>
+    @if (_request is not null)
+    {
+        <MudSpacer />
+        <StatusBadge Status="@_request.Status.ToString()" />
+    }
+</MudPaper>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (_request is null)
+{
+    <MudAlert Severity="Severity.Error">Request #@Id not found.</MudAlert>
+}
+else if (_request.Status != RequestStatus.Verified)
+{
+    <MudAlert Severity="Severity.Warning">
+        This request has status "@_request.Status" and cannot be approved. Only verified requests can be approved.
+    </MudAlert>
+}
+else
+{
+    <!-- Verified-by Banner -->
+    @if (_request.VerifiedBy is not null)
+    {
+        <MudAlert Severity="Severity.Info" Class="mb-4" Dense="true"
+                  Icon="@Icons.Material.Filled.Verified">
+            Verified by <strong>@_request.VerifiedBy.FullName</strong> on @_request.VerifiedAt?.ToString("MMM dd, yyyy h:mm tt")
+        </MudAlert>
+    }
+
+    <MudGrid>
+        <!-- Left: Request Info -->
+        <MudItem xs="12" md="4">
+            <MudPaper Elevation="2" Class="pa-4">
+                <MudText Typo="Typo.overline">Course</MudText>
+                <MudText Typo="Typo.h6" Style="font-weight:700;">@_request.CourseNumber</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Dark">@_request.CourseName</MudText>
+
+                <MudDivider Class="my-3" />
+
+                <MudText Typo="Typo.overline">Semester</MudText>
+                <MudText Typo="Typo.body1">@_request.Semester</MudText>
+
+                <MudText Typo="Typo.overline" Class="mt-2">Section</MudText>
+                <MudText Typo="Typo.body1">@(_request.Section ?? "---")</MudText>
+
+                <MudDivider Class="my-3" />
+
+                <MudText Typo="Typo.overline">Submitted By</MudText>
+                <MudText Typo="Typo.body1">@(_request.Submitter?.FullName ?? "---")</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Dark">@_request.SubmittedAt.ToString("MMM dd, yyyy h:mm tt")</MudText>
+            </MudPaper>
+
+            <!-- Action Panel -->
+            <MudPaper Elevation="2" Class="pa-4 mt-3">
+                <MudText Typo="Typo.subtitle1" Style="font-weight:700;" Class="mb-3">
+                    <MudIcon Icon="@Icons.Material.Filled.Gavel" Class="mr-1" />
+                    Approval Decision
+                </MudText>
+
+                @if (_showRejectNote)
+                {
+                    <MudTextField @bind-Value="_rejectionNote" Label="Rejection Note"
+                                  Placeholder="Explain why this request is being rejected..."
+                                  Variant="Variant.Outlined" Lines="3" Class="mb-3" />
+                }
+
+                <div class="d-flex gap-3">
+                    <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Large"
+                               StartIcon="@Icons.Material.Filled.CheckCircle"
+                               Disabled="@_processing"
+                               OnClick="HandleApprove" FullWidth="true">
+                        @(_processing ? "Processing..." : "Approve")
+                    </MudButton>
+                    @if (!_showRejectNote)
+                    {
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Large"
+                                   StartIcon="@Icons.Material.Filled.Cancel"
+                                   Disabled="@_processing"
+                                   OnClick="() => _showRejectNote = true" FullWidth="true">
+                            Reject
+                        </MudButton>
+                    }
+                    else
+                    {
+                        <MudButton Variant="Variant.Filled" Color="Color.Error" Size="Size.Large"
+                                   StartIcon="@Icons.Material.Filled.Cancel"
+                                   Disabled="@(_processing || string.IsNullOrWhiteSpace(_rejectionNote))"
+                                   OnClick="HandleReject" FullWidth="true">
+                            @(_processing ? "Processing..." : "Confirm Reject")
+                        </MudButton>
+                    }
+                </div>
+
+                @if (_showRejectNote)
+                {
+                    <MudButton Variant="Variant.Text" Color="Color.Default" Size="Size.Small"
+                               Class="mt-2" OnClick="() => _showRejectNote = false">
+                        Cancel Rejection
+                    </MudButton>
+                }
+            </MudPaper>
+        </MudItem>
+
+        <!-- Right: Items & Checklist -->
+        <MudItem xs="12" md="8">
+            <MudPaper Elevation="2">
+                <MudToolBar Dense="true" Style="background:#f5f5f5;">
+                    <MudIcon Icon="@Icons.Material.Filled.ListAlt" Class="mr-2" />
+                    <MudText Typo="Typo.subtitle1" Style="font-weight:600;">Items (@_request.Items.Count)</MudText>
+                </MudToolBar>
+
+                <MudTable Items="_request.Items" Hover="true" Dense="true">
+                    <HeaderContent>
+                        <MudTh>Type</MudTh>
+                        <MudTh>Title</MudTh>
+                        <MudTh>Author</MudTh>
+                        <MudTh>ISBN</MudTh>
+                        <MudTh>Publisher</MudTh>
+                        <MudTh>Required</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>
+                            <MudChip T="string" Size="Size.Small"
+                                     Color="@(context.ItemType == ItemType.Book ? Color.Primary : Color.Secondary)">
+                                @context.ItemType
+                            </MudChip>
+                        </MudTd>
+                        <MudTd>
+                            <strong>@(context.Title ?? context.SupplyDescription ?? "---")</strong>
+                        </MudTd>
+                        <MudTd>@(context.Author ?? "---")</MudTd>
+                        <MudTd>@(context.Isbn ?? "---")</MudTd>
+                        <MudTd>@(context.Publisher ?? "---")</MudTd>
+                        <MudTd>
+                            <MudChip T="string" Size="Size.Small"
+                                     Color="@(context.IsRequired ? Color.Success : Color.Default)">
+                                @(context.IsRequired ? "Required" : "Optional")
+                            </MudChip>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudPaper>
+
+            <!-- Book Checklist Results -->
+            @if (_bookItems.Any())
+            {
+                <MudText Typo="Typo.subtitle1" Style="font-weight:700;" Class="mt-4 mb-2">
+                    <MudIcon Icon="@Icons.Material.Filled.Checklist" Class="mr-1" />
+                    Automated Book Checklist
+                </MudText>
+
+                @foreach (var item in _bookItems)
+                {
+                    <MudCard Elevation="1" Class="mb-3">
+                        <MudCardContent>
+                            <MudText Typo="Typo.subtitle2" Style="font-weight:700;">@item.Title</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Dark" Class="mb-2">ISBN: @item.Isbn</MudText>
+
+                            @if (_checklists.TryGetValue(item.Isbn!, out var checklist))
+                            {
+                                <MudGrid>
+                                    <MudItem xs="6" md="3">
+                                        <MudPaper Elevation="0" Class="pa-2 text-center" Style="@(checklist.PrintAvailable ? "background:#e8f5e9;" : "background:#fff3e0;")">
+                                            <MudIcon Icon="@(checklist.PrintAvailable ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Warning)"
+                                                     Color="@(checklist.PrintAvailable ? Color.Success : Color.Warning)" />
+                                            <MudText Typo="Typo.caption" Style="font-weight:600;">
+                                                @(checklist.PrintAvailable ? "Available" : "Not Found")
+                                            </MudText>
+                                            <MudText Typo="Typo.caption" Color="Color.Dark">Print Purchase</MudText>
+                                        </MudPaper>
+                                    </MudItem>
+                                    <MudItem xs="6" md="3">
+                                        <MudPaper Elevation="0" Class="pa-2 text-center"
+                                                  Style="@(checklist.PriceFlagged ? "background:#ffebee;" : "background:#e8f5e9;")">
+                                            <MudIcon Icon="@(checklist.PriceFlagged ? Icons.Material.Filled.AttachMoney : Icons.Material.Filled.CheckCircle)"
+                                                     Color="@(checklist.PriceFlagged ? Color.Error : Color.Success)" />
+                                            <MudText Typo="Typo.caption" Style="font-weight:600;">
+                                                @(checklist.PrintPrice.HasValue ? $"${checklist.PrintPrice:F2}" : "No price")
+                                            </MudText>
+                                            <MudText Typo="Typo.caption" Color="Color.Dark">
+                                                @(checklist.PriceFlagged ? "Over $100" : "Price OK")
+                                            </MudText>
+                                        </MudPaper>
+                                    </MudItem>
+                                    <MudItem xs="6" md="3">
+                                        <MudPaper Elevation="0" Class="pa-2 text-center"
+                                                  Style="@(checklist.DigitalOnVitalSource || checklist.DigitalOnGoogle ? "background:#e8f5e9;" : "background:#fff3e0;")">
+                                            <MudIcon Icon="@(checklist.DigitalOnVitalSource || checklist.DigitalOnGoogle ? Icons.Material.Filled.Tablet : Icons.Material.Filled.TabletAndroid)"
+                                                     Color="@(checklist.DigitalOnVitalSource || checklist.DigitalOnGoogle ? Color.Success : Color.Warning)" />
+                                            <MudText Typo="Typo.caption" Style="font-weight:600;">
+                                                @(checklist.DigitalOnVitalSource || checklist.DigitalOnGoogle ? "Digital Available" : "No Digital")
+                                            </MudText>
+                                            <MudText Typo="Typo.caption" Color="Color.Dark">eBook Edition</MudText>
+                                        </MudPaper>
+                                    </MudItem>
+                                    <MudItem xs="6" md="3">
+                                        <MudPaper Elevation="0" Class="pa-2 text-center"
+                                                  Style="@(checklist.RequiredChanged ? "background:#fff3e0;" : "background:#e8f5e9;")">
+                                            <MudIcon Icon="@(checklist.RequiredChanged ? Icons.Material.Filled.SwapHoriz : Icons.Material.Filled.CheckCircle)"
+                                                     Color="@(checklist.RequiredChanged ? Color.Warning : Color.Success)" />
+                                            <MudText Typo="Typo.caption" Style="font-weight:600;">
+                                                @if (checklist.RequiredChanged)
+                                                {
+                                                    @($"{(checklist.PreviousIsRequired == true ? "Required" : "Optional")} -> {(item.IsRequired ? "Required" : "Optional")}")
+                                                }
+                                                else
+                                                {
+                                                    @("No Change")
+                                                }
+                                            </MudText>
+                                            <MudText Typo="Typo.caption" Color="Color.Dark">Req/Opt Status</MudText>
+                                        </MudPaper>
+                                    </MudItem>
+                                </MudGrid>
+                            }
+                            else
+                            {
+                                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Size="Size.Small" />
+                                <MudText Typo="Typo.caption" Color="Color.Dark">Running availability checks...</MudText>
+                            }
+
+                            <!-- Read-only suggestions from professor's submission -->
+                            @if (_suggestions.TryGetValue(item.Id, out var itemSuggestions) && itemSuggestions.Count > 0)
+                            {
+                                <MudDivider Class="my-3" />
+                                <MudText Typo="Typo.caption" Style="font-weight:700;" Class="mb-2">
+                                    <MudIcon Icon="@Icons.Material.Filled.Lightbulb" Size="Size.Small" Class="mr-1" />
+                                    Suggestions (@itemSuggestions.Count)
+                                </MudText>
+                                @foreach (var suggestion in itemSuggestions)
+                                {
+                                    <SuggestionCard Suggestion="suggestion" ReadOnly="true" />
+                                }
+                            }
+                        </MudCardContent>
+                    </MudCard>
+                }
+            }
+        </MudItem>
+    </MudGrid>
+}
+
+<MudMessageBox @ref="_confirmBox" Title="Confirm Action" CancelText="Cancel">
+    <MessageContent>
+        <MudText>@_confirmMessage</MudText>
+    </MessageContent>
+    <YesButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary">Confirm</MudButton>
+    </YesButton>
+</MudMessageBox>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+
+    private bool _loading = true;
+    private bool _processing;
+    private bool _showRejectNote;
+    private string _rejectionNote = "";
+    private string _confirmMessage = "";
+    private CourseRequest? _request;
+    private List<RequestItem> _bookItems = [];
+    private Dictionary<string, BookChecklistResult> _checklists = new();
+    private Dictionary<int, List<MaterialSuggestion>> _suggestions = new();
+    private MudMessageBox _confirmBox = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _request = await Db.CourseRequests
+            .Include(r => r.Submitter)
+            .Include(r => r.VerifiedBy)
+            .Include(r => r.ApprovedBy)
+            .Include(r => r.Items)
+            .FirstOrDefaultAsync(r => r.Id == Id);
+
+        if (_request is not null)
+        {
+            _bookItems = _request.Items
+                .Where(i => i.ItemType == ItemType.Book && !string.IsNullOrEmpty(i.Isbn))
+                .ToList();
+        }
+
+        _loading = false;
+
+        if (_bookItems.Any())
+        {
+            _ = RunChecklistsAsync();
+            _ = LoadSuggestionsAsync();
+        }
+    }
+
+    private async Task LoadSuggestionsAsync()
+    {
+        try
+        {
+            var all = await ReviewService.GetSuggestionsForRequestAsync(Id);
+            foreach (var group in all.GroupBy(s => s.RequestItemId))
+            {
+                _suggestions[group.Key] = group.ToList();
+            }
+            await InvokeAsync(StateHasChanged);
+        }
+        catch { /* Suggestions are non-critical */ }
+    }
+
+    private async Task RunChecklistsAsync()
+    {
+        var tasks = _bookItems.Select(async item =>
+        {
+            try
+            {
+                var result = await AvailabilityService.CheckBookChecklistAsync(
+                    item.Isbn!, _request!.CourseNumber, item.IsRequired, _request.Id);
+                return (item.Isbn!, result);
+            }
+            catch
+            {
+                return (item.Isbn!, (BookChecklistResult?)null);
+            }
+        });
+
+        foreach (var task in tasks)
+        {
+            var (isbn, result) = await task;
+            if (result is not null)
+            {
+                _checklists[isbn] = result;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+    }
+
+    private async Task HandleApprove()
+    {
+        _confirmMessage = $"Approve request #{Id} ({_request!.CourseNumber} - {_request.Semester})? Book ISBNs will be saved to the course catalog.";
+        var confirmed = await _confirmBox.ShowAsync();
+        if (confirmed != true) return;
+
+        _processing = true;
+        StateHasChanged();
+
+        try
+        {
+            var state = await AuthState!;
+            var userId = int.Parse(state.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+            _request.Status = RequestStatus.Approved;
+            _request.ApprovedById = userId;
+            _request.ApprovedAt = DateTime.UtcNow;
+
+            // Save approved book ISBNs to CourseBookAssignment table
+            var bookItemsWithIsbn = _request.Items
+                .Where(i => i.ItemType == ItemType.Book && !string.IsNullOrEmpty(i.Isbn))
+                .ToList();
+
+            if (bookItemsWithIsbn.Any())
+            {
+                // Lookup Course by CourseNumber + Semester
+                var course = await Db.Courses
+                    .FirstOrDefaultAsync(c => c.CourseNumber == _request.CourseNumber
+                                           && c.Semester == _request.Semester);
+
+                if (course is not null)
+                {
+                    foreach (var item in bookItemsWithIsbn)
+                    {
+                        var cleanIsbn = item.Isbn!.Replace("-", "").Trim();
+
+                        // Avoid duplicate assignments
+                        var exists = await Db.CourseBookAssignments
+                            .AnyAsync(a => a.CourseId == course.Id && a.Isbn == cleanIsbn);
+
+                        if (!exists)
+                        {
+                            Db.CourseBookAssignments.Add(new CourseBookAssignment
+                            {
+                                CourseId = course.Id,
+                                Isbn = cleanIsbn,
+                                Title = item.Title,
+                                Author = item.Author,
+                                Publisher = item.Publisher,
+                                Edition = item.Edition,
+                                PublicationYear = item.PublicationYear,
+                                IsRequired = item.IsRequired,
+                                AssignedAt = DateTime.UtcNow,
+                                AssignedFromRequestId = _request.Id
+                            });
+                        }
+                    }
+                }
+            }
+
+            await Db.SaveChangesAsync();
+
+            Snackbar.Add($"Request #{Id} has been approved. {bookItemsWithIsbn.Count} book(s) added to catalog.", Severity.Success);
+            Navigation.NavigateTo("/dashboard");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+            _processing = false;
+        }
+    }
+
+    private async Task HandleReject()
+    {
+        if (string.IsNullOrWhiteSpace(_rejectionNote))
+        {
+            Snackbar.Add("Please provide a rejection note.", Severity.Warning);
+            return;
+        }
+
+        _confirmMessage = $"Reject request #{Id}? The submitter will be notified.";
+        var confirmed = await _confirmBox.ShowAsync();
+        if (confirmed != true) return;
+
+        _processing = true;
+        StateHasChanged();
+
+        try
+        {
+            _request!.Status = RequestStatus.Rejected;
+            _request.RejectionNote = _rejectionNote;
+            await Db.SaveChangesAsync();
+
+            Snackbar.Add($"Request #{Id} has been rejected.", Severity.Warning);
+            Navigation.NavigateTo("/dashboard");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+            _processing = false;
+        }
+    }
+}

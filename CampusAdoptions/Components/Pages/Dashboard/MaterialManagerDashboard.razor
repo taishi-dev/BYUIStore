@@ -1,0 +1,168 @@
+@page "/dashboard/material-manager"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "MaterialManager")]
+@rendermode InteractiveServer
+@using CampusAdoptions.Data
+@using Microsoft.EntityFrameworkCore
+
+@inject AppDbContext Db
+@inject ISnackbar Snackbar
+
+<PageTitle>Material Manager Dashboard</PageTitle>
+
+<div class="mb-4">
+    <MudText Typo="Typo.h5">
+        <MudIcon Icon="@Icons.Material.Filled.FactCheck" Class="mr-2" />
+        Material Manager Dashboard
+    </MudText>
+    <MudText Typo="Typo.body2" Color="Color.Dark">
+        Review verified course material requests and approve or reject them for the catalog.
+    </MudText>
+</div>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else
+{
+    <!-- Summary Cards -->
+    <MudGrid Class="mb-4">
+        <MudItem xs="12" md="4">
+            <MudPaper Elevation="3" Class="pa-6 text-center" Style="background:#1a1a2e; color:white; border-radius:8px;">
+                <MudText Typo="Typo.caption" Style="font-weight:700; letter-spacing:.9px; color:#aaa; text-transform:uppercase;">
+                    <MudIcon Icon="@Icons.Material.Filled.HourglassTop" Size="Size.Small" Class="mr-1" />
+                    Awaiting Approval
+                </MudText>
+                <MudText Typo="Typo.h2" Style="font-weight:900; color:#f5a623;">@_cntAwaitingApproval</MudText>
+                <MudText Typo="Typo.caption" Style="color:#888;">Verified — ready to review</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudPaper Elevation="3" Class="pa-6 text-center" Style="background:#0d2318; color:white; border-radius:8px;">
+                <MudText Typo="Typo.caption" Style="font-weight:700; letter-spacing:.9px; color:#aaa; text-transform:uppercase;">
+                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Class="mr-1" />
+                    Approved Today
+                </MudText>
+                <MudText Typo="Typo.h2" Style="font-weight:900; color:#4caf50;">@_cntApprovedToday</MudText>
+                <MudText Typo="Typo.caption" Style="color:#888;">Since midnight UTC</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudPaper Elevation="3" Class="pa-6 text-center" Style="background:#1f0d0d; color:white; border-radius:8px;">
+                <MudText Typo="Typo.caption" Style="font-weight:700; letter-spacing:.9px; color:#aaa; text-transform:uppercase;">
+                    <MudIcon Icon="@Icons.Material.Filled.Cancel" Size="Size.Small" Class="mr-1" />
+                    Rejected This Week
+                </MudText>
+                <MudText Typo="Typo.h2" Style="font-weight:900; color:#ef5350;">@_cntRejectedThisWeek</MudText>
+                <MudText Typo="Typo.caption" Style="color:#888;">Since Sunday midnight UTC</MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <!-- Approval Queue -->
+    <MudPaper Elevation="2">
+        <MudToolBar Dense="true" Style="background:#f5f5f5;">
+            <MudIcon Icon="@Icons.Material.Filled.PlaylistAddCheck" Class="mr-2" />
+            <MudText Typo="Typo.subtitle1" Style="font-weight:600;">Approval Queue — Verified Requests</MudText>
+            <MudSpacer />
+            <MudText Typo="Typo.caption" Color="Color.Dark">Oldest first (most urgent at top)</MudText>
+        </MudToolBar>
+
+        @if (!_queue.Any())
+        {
+            <div class="pa-8 text-center">
+                <MudIcon Icon="@Icons.Material.Filled.DoneAll" Color="Color.Success" Style="font-size:3rem;" />
+                <MudText Typo="Typo.h6" Class="mt-3" Color="Color.Dark">All clear — no requests awaiting approval.</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Dark">
+                    Requests will appear here once an Office Manager verifies them.
+                </MudText>
+            </div>
+        }
+        else
+        {
+            <MudTable Items="_queue" Hover="true" Dense="true">
+                <HeaderContent>
+                    <MudTh>Course</MudTh>
+                    <MudTh>Section</MudTh>
+                    <MudTh>Semester</MudTh>
+                    <MudTh>Submitted By</MudTh>
+                    <MudTh>Verified</MudTh>
+                    <MudTh Style="text-align:center;">Items</MudTh>
+                    <MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        <strong>@context.CourseNumber</strong><br />
+                        <MudText Typo="Typo.caption" Color="Color.Dark">@context.CourseName</MudText>
+                    </MudTd>
+                    <MudTd><MudChip T="string" Size="Size.Small" Color="Color.Default">@($"§{context.Section}")</MudChip></MudTd>
+                    <MudTd Style="font-size:0.85rem; color:#888;">@context.Semester</MudTd>
+                    <MudTd>
+                        <MudText Typo="Typo.body2">@context.Submitter?.FullName</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Dark">@context.Submitter?.Department</MudText>
+                    </MudTd>
+                    <MudTd>
+                        @if (context.VerifiedAt.HasValue)
+                        {
+                            <MudText Typo="Typo.body2">@context.VerifiedAt.Value.ToLocalTime().ToString("MMM d, yyyy")</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Dark">by @context.VerifiedBy?.FullName</MudText>
+                        }
+                    </MudTd>
+                    <MudTd Style="text-align:center;">
+                        <MudChip T="string" Size="Size.Small" Color="Color.Info">@context.Items.Count</MudChip>
+                    </MudTd>
+                    <MudTd Style="text-align:right;">
+                        <MudButton Href="@($"/requests/approve/{context.Id}")" Variant="Variant.Filled"
+                                   Color="Color.Primary" Size="Size.Small"
+                                   EndIcon="@Icons.Material.Filled.ArrowForward">
+                            Review &amp; Approve
+                        </MudButton>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+            <MudToolBar Dense="true" Style="background:#fafafa;">
+                <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" Class="mr-1" Color="Color.Dark" />
+                <MudText Typo="Typo.caption" Color="Color.Dark">
+                    @_queue.Count request@(_queue.Count == 1 ? "" : "s") waiting for final approval.
+                </MudText>
+            </MudToolBar>
+        }
+    </MudPaper>
+}
+
+@code {
+    private bool _loading = true;
+    private int _cntAwaitingApproval;
+    private int _cntApprovedToday;
+    private int _cntRejectedThisWeek;
+    private List<CourseRequest> _queue = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var today = DateTime.UtcNow.Date;
+        var startOfWeek = today.AddDays(-(int)today.DayOfWeek);
+
+        _cntAwaitingApproval = await Db.CourseRequests
+            .CountAsync(r => r.Status == RequestStatus.Verified);
+
+        _cntApprovedToday = await Db.CourseRequests
+            .CountAsync(r => r.Status == RequestStatus.Approved
+                          && r.ApprovedAt.HasValue
+                          && r.ApprovedAt.Value.Date == today);
+
+        _cntRejectedThisWeek = await Db.CourseRequests
+            .CountAsync(r => r.Status == RequestStatus.Rejected
+                          && r.ApprovedAt.HasValue
+                          && r.ApprovedAt.Value >= startOfWeek);
+
+        _queue = await Db.CourseRequests
+            .Include(r => r.Submitter)
+            .Include(r => r.VerifiedBy)
+            .Include(r => r.Items)
+            .Where(r => r.Status == RequestStatus.Verified)
+            .OrderBy(r => r.VerifiedAt)
+            .ToListAsync();
+
+        _loading = false;
+    }
+}

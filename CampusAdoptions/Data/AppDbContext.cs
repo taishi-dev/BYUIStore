@@ -18,6 +18,9 @@ public class AppDbContext : DbContext
     public DbSet<Enrollment>          Enrollments       { get; set; }
     public DbSet<CourseBookAssignment> CourseBookAssignments { get; set; }
 
+    // ── Material review suggestions ─────────────────────────────────────
+    public DbSet<MaterialSuggestion>  MaterialSuggestions { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -96,5 +99,15 @@ public class AppDbContext : DbContext
             .WithMany(c => c.BookAssignments)
             .HasForeignKey(b => b.CourseId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        // MaterialSuggestion: FK → RequestItem, cascade delete, indexed
+        modelBuilder.Entity<MaterialSuggestion>()
+            .HasOne(s => s.RequestItem)
+            .WithMany(i => i.Suggestions)
+            .HasForeignKey(s => s.RequestItemId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<MaterialSuggestion>()
+            .HasIndex(s => s.RequestItemId);
     }
 }

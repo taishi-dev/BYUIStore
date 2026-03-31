@@ -1,0 +1,130 @@
+@using CampusAdoptions.Models
+
+<MudPaper Elevation="0" Class="pa-3 mb-2"
+          Style="@($"border-left: 4px solid {BorderColor}; background: {BgColor}; {(Suggestion.DismissedByProfessor ? "opacity: 0.5;" : "")}")">
+    <div class="d-flex justify-space-between align-center mb-1">
+        <div class="d-flex align-center gap-2">
+            <MudChip T="string" Size="Size.Small" Color="@ChipColor" Variant="Variant.Filled">
+                @TypeLabel
+            </MudChip>
+            @if (!string.IsNullOrEmpty(Suggestion.Source))
+            {
+                <MudText Typo="Typo.caption" Color="Color.Dark">via @Suggestion.Source</MudText>
+            }
+        </div>
+        @if (!ReadOnly && !Suggestion.DismissedByProfessor)
+        {
+            <MudButton Variant="Variant.Text" Color="Color.Default" Size="Size.Small"
+                       StartIcon="@Icons.Material.Filled.Close"
+                       OnClick="() => OnDismiss.InvokeAsync(Suggestion.Id)">
+                Dismiss
+            </MudButton>
+        }
+        @if (Suggestion.DismissedByProfessor)
+        {
+            <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">
+                Dismissed
+            </MudChip>
+        }
+    </div>
+
+    <MudText Typo="Typo.body2" Style="font-weight:600;">
+        @(Suggestion.SuggestedTitle ?? "Unknown title")
+    </MudText>
+
+    @if (!string.IsNullOrEmpty(Suggestion.SuggestedAuthor))
+    {
+        <MudText Typo="Typo.caption" Color="Color.Dark">@Suggestion.SuggestedAuthor</MudText>
+    }
+
+    <div class="d-flex align-center gap-3 mt-1 flex-wrap">
+        @if (!string.IsNullOrEmpty(Suggestion.SuggestedIsbn))
+        {
+            <MudText Typo="Typo.caption">ISBN: @Suggestion.SuggestedIsbn</MudText>
+        }
+        @if (!string.IsNullOrEmpty(Suggestion.SuggestedEdition))
+        {
+            <MudText Typo="Typo.caption">Edition: @Suggestion.SuggestedEdition</MudText>
+        }
+        @if (Suggestion.SuggestedPublicationYear.HasValue)
+        {
+            <MudText Typo="Typo.caption">Year: @Suggestion.SuggestedPublicationYear</MudText>
+        }
+    </div>
+
+    @if (Suggestion.OriginalPrice.HasValue || Suggestion.SuggestedPrice.HasValue)
+    {
+        <div class="d-flex align-center gap-3 mt-2">
+            @if (Suggestion.OriginalPrice.HasValue)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Dark">
+                    Current: <strong>$@Suggestion.OriginalPrice.Value.ToString("F2")</strong>
+                </MudText>
+            }
+            @if (Suggestion.SuggestedPrice.HasValue)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Success" Style="font-weight:600;">
+                    Suggested: $@Suggestion.SuggestedPrice.Value.ToString("F2")
+                </MudText>
+            }
+            @if (Suggestion.PriceSavings.HasValue && Suggestion.PriceSavings.Value > 0)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Filled">
+                    Save $@Suggestion.PriceSavings.Value.ToString("F2")
+                </MudChip>
+            }
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(Suggestion.ReasonText))
+    {
+        <MudText Typo="Typo.caption" Color="Color.Dark" Class="mt-1" Style="font-style:italic;">
+            @Suggestion.ReasonText
+        </MudText>
+    }
+
+    @if (!string.IsNullOrEmpty(Suggestion.SourceUrl))
+    {
+        <MudLink Href="@Suggestion.SourceUrl" Target="_blank" Typo="Typo.caption" Class="mt-1">
+            View source
+        </MudLink>
+    }
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public MaterialSuggestion Suggestion { get; set; } = default!;
+    [Parameter] public EventCallback<int> OnDismiss { get; set; }
+    [Parameter] public bool ReadOnly { get; set; }
+
+    private string TypeLabel => Suggestion.Type switch
+    {
+        SuggestionType.CheaperAlternative => "SuperMaterial",
+        SuggestionType.NewerEdition => "Bookmaster Edition",
+        SuggestionType.DigitalAvailable => "Digital Option",
+        _ => "Suggestion"
+    };
+
+    private Color ChipColor => Suggestion.Type switch
+    {
+        SuggestionType.CheaperAlternative => Color.Success,
+        SuggestionType.NewerEdition => Color.Info,
+        SuggestionType.DigitalAvailable => Color.Primary,
+        _ => Color.Default
+    };
+
+    private string BorderColor => Suggestion.Type switch
+    {
+        SuggestionType.CheaperAlternative => "#4caf50",
+        SuggestionType.NewerEdition => "#2196f3",
+        SuggestionType.DigitalAvailable => "#1976d2",
+        _ => "#9e9e9e"
+    };
+
+    private string BgColor => Suggestion.Type switch
+    {
+        SuggestionType.CheaperAlternative => "#f1f8e9",
+        SuggestionType.NewerEdition => "#e3f2fd",
+        SuggestionType.DigitalAvailable => "#e8eaf6",
+        _ => "#fafafa"
+    };
+}

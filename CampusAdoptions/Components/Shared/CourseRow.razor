@@ -1,0 +1,110 @@
+@using CampusAdoptions.Models.Verba
+
+<div class="course-row">
+    <div class="course-row__header">
+        <button class="course-row__toggle" @onclick="OnToggle" title="@(IsExpanded ? "Collapse" : "Expand")">
+            @(IsExpanded ? "\u2212" : "+")
+        </button>
+
+        <div class="course-row__info">
+            <a class="course-row__name" @onclick="OnCourseSelected" @onclick:preventDefault>
+                @Course.Name
+            </a>
+            <div class="course-row__subtitle">
+                @Course.SectionCount section@(Course.SectionCount != 1 ? "s" : "")
+            </div>
+        </div>
+
+        <div class="course-row__badges">
+            @if (Course.IsCurrentSinceExported)
+            {
+                <span class="badge-teal">CURRENT SINCE EXPORTED</span>
+            }
+            @if (!Course.IsPushed)
+            {
+                <span class="badge-blue">NOT YET PUSHED</span>
+            }
+            @if (Course.NoTextRequired)
+            {
+                <span class="badge-orange">NO TEXT REQUIRED</span>
+            }
+        </div>
+
+        <div class="course-row__actions">
+            <div class="btn-dropdown">
+                <button class="btn-verba btn-verba--sm" @onclick="ToggleActions" @onclick:stopPropagation>
+                    ACTIONS &#9662;
+                </button>
+                @if (_showActions)
+                {
+                    <div class="btn-dropdown__backdrop" @onclick="CloseActions"></div>
+                    <div class="btn-dropdown__menu btn-dropdown__menu--open">
+                        <button class="btn-dropdown__item" @onclick='() => DoAction("Manage Users")'>Manage Users</button>
+                        <button class="btn-dropdown__item" @onclick='() => DoAction("Edit Course Attributes")'>Edit Course Attributes</button>
+                        <button class="btn-dropdown__item" @onclick='() => DoAction("Push to Back Office")'>Push to Back Office</button>
+                        <button class="btn-dropdown__item" @onclick='() => DoAction("Add Section")'>Add Section</button>
+                        <button class="btn-dropdown__item" @onclick='() => DoAction("Faculty Views")'>Faculty Views</button>
+                        <button class="btn-dropdown__item" @onclick='() => DoAction("Print Adoption")'>Print Adoption</button>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    @if (IsExpanded)
+    {
+        <div class="section-list">
+            @foreach (var sec in Course.Sections)
+            {
+                <div class="section-item" @onclick="() => OnCourseSelected.InvokeAsync()">
+                    <span class="section-item__icon">&#9998;</span>
+                    <span class="section-item__name">
+                        @sec.Id &mdash; @sec.InstructorName
+                    </span>
+                    @if (sec.HasStar)
+                    {
+                        <span class="section-item__star">&#9733;</span>
+                    }
+                    <span class="section-item__status @GetStatusClass(sec.Status)">
+                        @sec.Status.ToString().ToUpper()
+                    </span>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public VerbaCourse Course { get; set; } = default!;
+    [Parameter] public bool IsExpanded { get; set; }
+    [Parameter] public EventCallback OnToggle { get; set; }
+    [Parameter] public EventCallback OnCourseSelected { get; set; }
+    [Parameter] public EventCallback<string> OnActionSelected { get; set; }
+
+    private bool _showActions;
+
+    private void ToggleActions()
+    {
+        _showActions = !_showActions;
+    }
+
+    private void CloseActions()
+    {
+        _showActions = false;
+    }
+
+    private async Task DoAction(string actionName)
+    {
+        _showActions = false;
+        await OnActionSelected.InvokeAsync(actionName);
+    }
+
+    private string GetStatusClass(AdoptionStatus status) => status switch
+    {
+        AdoptionStatus.Approved => "badge-green",
+        AdoptionStatus.Submitted => "badge-orange",
+        AdoptionStatus.Reviewed => "badge-teal",
+        AdoptionStatus.Incomplete => "badge-red",
+        _ => ""
+    };
+}

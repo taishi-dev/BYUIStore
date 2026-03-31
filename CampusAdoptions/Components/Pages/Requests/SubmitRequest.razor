@@ -1,0 +1,462 @@
+@page "/requests/submit"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Professor,OfficeManager")]
+@rendermode InteractiveServer
+@using CampusAdoptions.Data
+@using Microsoft.EntityFrameworkCore
+@using System.Security.Claims
+
+@inject AppDbContext Db
+@inject IsbnDirectLookupService IsbnDirect
+@inject IsbnLookupService IsbnSearch
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+
+<PageTitle>Submit Course Request</PageTitle>
+
+<MudPaper Elevation="1" Class="pa-3 mb-4 d-flex align-center gap-3">
+    <MudButton Href="/dashboard" Variant="Variant.Text" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.ArrowBack" Size="Size.Small">
+        BACK TO DASHBOARD
+    </MudButton>
+    <MudDivider Vertical="true" FlexItem="true" />
+    <MudText Typo="Typo.h6" Style="font-weight:700;">
+        <MudIcon Icon="@Icons.Material.Filled.NoteAdd" Class="mr-2" />
+        Submit Course Request
+    </MudText>
+</MudPaper>
+
+@if (_submitting)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+
+<MudGrid>
+    <!-- Course Info -->
+    <MudItem xs="12">
+        <MudPaper Elevation="2" Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Style="font-weight:700;" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.School" Class="mr-1" />
+                Course Information
+            </MudText>
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_model.CourseName" Label="Course Name"
+                                  Placeholder="e.g. Programming with Classes"
+                                  Required="true" RequiredError="Course name is required."
+                                  Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" md="3">
+                    <MudTextField @bind-Value="_model.CourseNumber" Label="Course Number"
+                                  Placeholder="e.g. CSE 210"
+                                  Required="true" RequiredError="Course number is required."
+                                  Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" md="2">
+                    <MudTextField @bind-Value="_model.Semester" Label="Semester"
+                                  Placeholder="e.g. Spring 2026"
+                                  Required="true" RequiredError="Semester is required."
+                                  Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" md="1">
+                    <MudTextField @bind-Value="_model.Section" Label="Section"
+                                  Placeholder="e.g. 01"
+                                  Variant="Variant.Outlined" />
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+    </MudItem>
+
+    <!-- Items -->
+    <MudItem xs="12">
+        <MudPaper Elevation="2" Class="pa-4">
+            <div class="d-flex justify-space-between align-center mb-3">
+                <MudText Typo="Typo.subtitle1" Style="font-weight:700;">
+                    <MudIcon Icon="@Icons.Material.Filled.ListAlt" Class="mr-1" />
+                    Items (@_model.Items.Count)
+                </MudText>
+                <MudButtonGroup OverrideStyles="false">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.MenuBook"
+                               OnClick="() => AddItem(ItemType.Book)">
+                        Add Book
+                    </MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Inventory2"
+                               OnClick="() => AddItem(ItemType.Supply)">
+                        Add Supply
+                    </MudButton>
+                </MudButtonGroup>
+            </div>
+
+            @if (!_model.Items.Any())
+            {
+                <MudAlert Severity="Severity.Info" Dense="true">
+                    Click "Add Book" or "Add Supply" to begin building your request.
+                </MudAlert>
+            }
+
+            @for (int idx = 0; idx < _model.Items.Count; idx++)
+            {
+                var i = idx;
+                var item = _model.Items[i];
+                var itemType = Enum.Parse<ItemType>(item.ItemType);
+
+                <MudCard Elevation="1" Class="mb-3">
+                    <MudCardContent>
+                        <div class="d-flex justify-space-between align-center mb-2">
+                            <MudText Typo="Typo.subtitle2" Style="font-weight:700;">
+                                <MudChip T="string" Size="Size.Small"
+                                         Color="@(itemType == ItemType.Book ? Color.Primary : Color.Secondary)">
+                                    @item.ItemType #@(i + 1)
+                                </MudChip>
+                            </MudText>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small"
+                                       StartIcon="@Icons.Material.Filled.Delete"
+                                       OnClick="() => RemoveItem(i)">
+                                Remove
+                            </MudButton>
+                        </div>
+
+                        @if (itemType == ItemType.Book)
+                        {
+                            <!-- ISBN Lookup Row -->
+                            <MudGrid>
+                                <MudItem xs="12" md="4">
+                                    <MudTextField @bind-Value="item.Isbn" Label="ISBN"
+                                                  Placeholder="Enter ISBN-10 or ISBN-13"
+                                                  Variant="Variant.Outlined" Adornment="Adornment.End"
+                                                  AdornmentIcon="@Icons.Material.Filled.Search"
+                                                  OnAdornmentClick="() => LookupIsbn(i)" />
+                                </MudItem>
+                                <MudItem xs="12" md="2" Class="d-flex align-end">
+                                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                                               FullWidth="true"
+                                               StartIcon="@Icons.Material.Filled.Search"
+                                               Disabled="@(string.IsNullOrWhiteSpace(item.Isbn))"
+                                               OnClick="() => LookupIsbn(i)">
+                                        @(_lookingUpIndex == i ? "Looking up..." : "ISBN Lookup")
+                                    </MudButton>
+                                </MudItem>
+                                <MudItem xs="12" md="2" Class="d-flex align-end">
+                                    <MudButton Variant="Variant.Outlined" Color="Color.Info" Size="Size.Small"
+                                               FullWidth="true"
+                                               StartIcon="@Icons.Material.Filled.ManageSearch"
+                                               Disabled="@(string.IsNullOrWhiteSpace(item.Title))"
+                                               OnClick="() => SearchByTitle(i)">
+                                        @(_searchingIndex == i ? "Searching..." : "Title Search")
+                                    </MudButton>
+                                </MudItem>
+                                <MudItem xs="12" md="4">
+                                    @if (_lookupMessage.ContainsKey(i))
+                                    {
+                                        <MudAlert Severity="@(_lookupSuccess.GetValueOrDefault(i) ? Severity.Success : Severity.Warning)"
+                                                  Dense="true" Class="mt-2">
+                                            @_lookupMessage[i]
+                                        </MudAlert>
+                                    }
+                                </MudItem>
+                            </MudGrid>
+
+                            <!-- Book detail fields -->
+                            <MudGrid Class="mt-2">
+                                <MudItem xs="12" md="4">
+                                    <MudTextField @bind-Value="item.Title" Label="Title"
+                                                  Variant="Variant.Outlined" />
+                                </MudItem>
+                                <MudItem xs="12" md="3">
+                                    <MudTextField @bind-Value="item.Author" Label="Author"
+                                                  Variant="Variant.Outlined" />
+                                </MudItem>
+                                <MudItem xs="12" md="3">
+                                    <MudTextField @bind-Value="item.Publisher" Label="Publisher"
+                                                  Variant="Variant.Outlined" />
+                                </MudItem>
+                                <MudItem xs="6" md="1">
+                                    <MudTextField @bind-Value="item.Edition" Label="Edition"
+                                                  Variant="Variant.Outlined" />
+                                </MudItem>
+                                <MudItem xs="6" md="1">
+                                    <MudTextField @bind-Value="item.PublicationYear" Label="Year"
+                                                  Variant="Variant.Outlined" InputType="InputType.Number" />
+                                </MudItem>
+                            </MudGrid>
+                        }
+                        else
+                        {
+                            <!-- Supply fields -->
+                            <MudGrid>
+                                <MudItem xs="12" md="8">
+                                    <MudTextField @bind-Value="item.SupplyDescription" Label="Supply Description"
+                                                  Placeholder="e.g. Scientific calculator TI-84"
+                                                  Variant="Variant.Outlined" />
+                                </MudItem>
+                            </MudGrid>
+                        }
+
+                        <!-- Common fields -->
+                        <MudGrid Class="mt-2">
+                            <MudItem xs="6" md="2">
+                                <MudTextField @bind-Value="item.Quantity" Label="Quantity"
+                                              Variant="Variant.Outlined" InputType="InputType.Number" />
+                            </MudItem>
+                            <MudItem xs="6" md="2">
+                                <MudSelect @bind-Value="item.IsRequired" Label="Required?"
+                                           Variant="Variant.Outlined" T="bool">
+                                    <MudSelectItem T="bool" Value="true">Required</MudSelectItem>
+                                    <MudSelectItem T="bool" Value="false">Optional</MudSelectItem>
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="12" md="8">
+                                <MudTextField @bind-Value="item.Notes" Label="Notes"
+                                              Variant="Variant.Outlined" />
+                            </MudItem>
+                        </MudGrid>
+                    </MudCardContent>
+                </MudCard>
+            }
+        </MudPaper>
+    </MudItem>
+
+    <!-- Submit -->
+    <MudItem xs="12" Class="d-flex justify-end gap-3">
+        <MudButton Href="/dashboard" Variant="Variant.Outlined" Color="Color.Default">
+            Cancel
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Warning" Size="Size.Large"
+                   StartIcon="@Icons.Material.Filled.Send"
+                   Disabled="@(_submitting || !_model.Items.Any())"
+                   OnClick="HandleSubmit">
+            Submit Request
+        </MudButton>
+    </MudItem>
+</MudGrid>
+
+<!-- Title Search Results Dialog -->
+<MudMessageBox @ref="_searchBox" Title="Search Results" CancelText="Close">
+    <MessageContent>
+        @if (_searchResults.Any())
+        {
+            <MudTable Items="_searchResults" Hover="true" Dense="true">
+                <HeaderContent>
+                    <MudTh>Title</MudTh>
+                    <MudTh>Author</MudTh>
+                    <MudTh>ISBN</MudTh>
+                    <MudTh>Publisher</MudTh>
+                    <MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.Title</MudTd>
+                    <MudTd>@context.Author</MudTd>
+                    <MudTd>@context.Isbn</MudTd>
+                    <MudTd>@context.Publisher</MudTd>
+                    <MudTd>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                                   OnClick="() => SelectSearchResult(context)">
+                            Select
+                        </MudButton>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+        else
+        {
+            <MudAlert Severity="Severity.Info">No results found. Try a different title or add the book manually.</MudAlert>
+        }
+    </MessageContent>
+    <YesButton>
+        <MudButton Variant="Variant.Text" Color="Color.Default" Style="display:none;" />
+    </YesButton>
+</MudMessageBox>
+
+@code {
+    private SubmitRequestViewModel _model = new() { Items = [new ItemViewModel()] };
+    private bool _submitting;
+    private int? _lookingUpIndex;
+    private int? _searchingIndex;
+    private int? _searchTargetIndex;
+    private Dictionary<int, string> _lookupMessage = new();
+    private Dictionary<int, bool> _lookupSuccess = new();
+    private List<BookSearchResult> _searchResults = [];
+    private MudMessageBox _searchBox = default!;
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+
+    [SupplyParameterFromQuery]
+    public string? Course { get; set; }
+
+    protected override void OnInitialized()
+    {
+        if (!string.IsNullOrWhiteSpace(Course))
+        {
+            _model.CourseNumber = Uri.UnescapeDataString(Course);
+        }
+    }
+
+    private void AddItem(ItemType type)
+    {
+        _model.Items.Add(new ItemViewModel { ItemType = type.ToString() });
+    }
+
+    private void RemoveItem(int index)
+    {
+        if (index >= 0 && index < _model.Items.Count)
+        {
+            _model.Items.RemoveAt(index);
+            _lookupMessage.Remove(index);
+            _lookupSuccess.Remove(index);
+        }
+    }
+
+    private async Task LookupIsbn(int index)
+    {
+        var item = _model.Items[index];
+        if (string.IsNullOrWhiteSpace(item.Isbn)) return;
+
+        _lookingUpIndex = index;
+        _lookupMessage.Remove(index);
+        _lookupSuccess.Remove(index);
+        StateHasChanged();
+
+        try
+        {
+            var result = await IsbnDirect.LookupAsync(item.Isbn);
+            if (result is not null)
+            {
+                item.Title = result.Title;
+                item.Author = result.Author;
+                item.Publisher = result.Publisher;
+                item.Edition = result.Edition;
+                item.PublicationYear = result.Year;
+                if (!string.IsNullOrWhiteSpace(result.Isbn))
+                    item.Isbn = result.Isbn;
+
+                _lookupMessage[index] = $"Found: {result.Title} ({result.Source})";
+                _lookupSuccess[index] = true;
+            }
+            else
+            {
+                _lookupMessage[index] = "ISBN not found in any source. Please fill in details manually.";
+                _lookupSuccess[index] = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            _lookupMessage[index] = $"Lookup error: {ex.Message}";
+            _lookupSuccess[index] = false;
+        }
+        finally
+        {
+            _lookingUpIndex = null;
+        }
+    }
+
+    private async Task SearchByTitle(int index)
+    {
+        var item = _model.Items[index];
+        if (string.IsNullOrWhiteSpace(item.Title)) return;
+
+        _searchingIndex = index;
+        _searchTargetIndex = index;
+        StateHasChanged();
+
+        try
+        {
+            _searchResults = await IsbnSearch.SearchAsync(item.Title, item.Author);
+            _searchingIndex = null;
+            StateHasChanged();
+            await _searchBox.ShowAsync();
+        }
+        catch
+        {
+            _searchResults = [];
+            _searchingIndex = null;
+            Snackbar.Add("Title search failed. Please try again.", Severity.Error);
+        }
+    }
+
+    private void SelectSearchResult(BookSearchResult result)
+    {
+        if (_searchTargetIndex.HasValue && _searchTargetIndex.Value < _model.Items.Count)
+        {
+            var item = _model.Items[_searchTargetIndex.Value];
+            item.Title = result.Title;
+            item.Author = result.Author;
+            item.Isbn = result.Isbn;
+            item.Publisher = result.Publisher;
+            item.Edition = result.Edition;
+            item.PublicationYear = result.Year;
+
+            _lookupMessage[_searchTargetIndex.Value] = $"Selected: {result.Title}";
+            _lookupSuccess[_searchTargetIndex.Value] = true;
+        }
+        StateHasChanged();
+    }
+
+    private async Task HandleSubmit()
+    {
+        if (string.IsNullOrWhiteSpace(_model.CourseName) ||
+            string.IsNullOrWhiteSpace(_model.CourseNumber) ||
+            string.IsNullOrWhiteSpace(_model.Semester))
+        {
+            Snackbar.Add("Please fill in all required course fields.", Severity.Warning);
+            return;
+        }
+
+        if (!_model.Items.Any())
+        {
+            Snackbar.Add("Please add at least one item.", Severity.Warning);
+            return;
+        }
+
+        _submitting = true;
+        StateHasChanged();
+
+        try
+        {
+            var state = await AuthState!;
+            var userId = int.Parse(state.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+            var request = new CourseRequest
+            {
+                SubmitterId = userId,
+                CourseName = _model.CourseName,
+                CourseNumber = _model.CourseNumber,
+                Semester = _model.Semester,
+                Section = _model.Section,
+                Status = RequestStatus.PendingVerification,
+                SubmittedAt = DateTime.UtcNow
+            };
+
+            foreach (var vm in _model.Items)
+            {
+                var itemType = Enum.Parse<ItemType>(vm.ItemType);
+                request.Items.Add(new RequestItem
+                {
+                    ItemType = itemType,
+                    Title = vm.Title,
+                    Author = vm.Author,
+                    Isbn = vm.Isbn,
+                    Publisher = vm.Publisher,
+                    Edition = vm.Edition,
+                    PublicationYear = vm.PublicationYear,
+                    SupplyDescription = vm.SupplyDescription,
+                    Quantity = vm.Quantity,
+                    IsRequired = vm.IsRequired,
+                    Notes = vm.Notes
+                });
+            }
+
+            Db.CourseRequests.Add(request);
+            await Db.SaveChangesAsync();
+
+            Snackbar.Add($"Request #{request.Id} submitted! Reviewing your materials...", Severity.Success);
+            Navigation.NavigateTo($"/requests/details/{request.Id}");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to submit: {ex.Message}", Severity.Error);
+            _submitting = false;
+        }
+    }
+}

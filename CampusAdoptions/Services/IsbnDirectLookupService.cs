@@ -55,19 +55,30 @@ public class IsbnDirectLookupService
             };
         }
 
-        // ── Start VitalSource check in background (runs in parallel with OL/Google) ──
-        // VitalSource = digital confirmed + price. Always needed regardless of metadata source.
-        var vsTask = TryVitalSourceAsync(isbn, http);
-
-        // ── 2. Open Library (best for academic/textbooks, no rate limits) ─
+        // ── 2. VitalSource (primary external source — digital + price) ────
         if (result == null)
         {
-            var olResult = await TryOpenLibraryAsync(isbn, http);
-            if (olResult != null && !string.IsNullOrEmpty(olResult.Title))
-                result = olResult;
+            var vsResult = await TryVitalSourceAsync(isbn, http);
+            if (vsResult != null && !string.IsNullOrEmpty(vsResult.Title))
+                return vsResult; // already has DigitalOnVitalSource=true and price
+        }
+        else
+        {
+            // Local DB hit — still check VitalSource for digital info + pricing
+            var vsResult = await TryVitalSourceAsync(isbn, http);
+            if (vsResult != null)
+            {
+                result.DigitalOnVitalSource  = true;
+                result.VitalSourcePrice      = vsResult.VitalSourcePrice;
+                result.VitalSourcePriceDays  = vsResult.VitalSourcePriceDays;
+                result.VitalSourceUrl        = vsResult.VitalSourceUrl;
+                if (string.IsNullOrEmpty(result.CoverThumbnail) && !string.IsNullOrEmpty(vsResult.CoverThumbnail))
+                    result.CoverThumbnail = vsResult.CoverThumbnail;
+            }
+            return result;
         }
 
-        // ── 3. Google Books ──────────────────────────────────────────────
+        // ── 3. Google Books (fallback) ──────────────────────────────────
         if (result == null)
         {
             var gbResult = await TryGoogleBooksAsync(isbn, http);
@@ -75,91 +86,12 @@ public class IsbnDirectLookupService
                 result = gbResult;
         }
 
-        // ── 4. Await VitalSource result ───────────────────────────────────
-
-        if (result == null)
-        {
-            // VitalSource is our last metadata source too
-            var vsResult = await vsTask;
-            if (vsResult != null && !string.IsNullOrEmpty(vsResult.Title))
-                return vsResult;   // already has DigitalOnVitalSource=true and price
-        }
-        else
-        {
-            // Merge VitalSource digital info into metadata from another source
-            var vsResult = await vsTask;
-            if (vsResult != null)
-            {
-                result.DigitalOnVitalSource  = true;
-                result.VitalSourcePrice      = vsResult.VitalSourcePrice;
-                result.VitalSourcePriceDays  = vsResult.VitalSourcePriceDays;
-                result.VitalSourceUrl        = vsResult.VitalSourceUrl;
-                // Fill in cover if the primary source didn't have one
-                if (string.IsNullOrEmpty(result.CoverThumbnail) && !string.IsNullOrEmpty(vsResult.CoverThumbnail))
-                    result.CoverThumbnail = vsResult.CoverThumbnail;
-            }
+        if (result != null)
             return result;
-        }
 
         // ── Nothing found – return null so user can fill manually ─────────
         _logger.LogWarning("ISBN {Isbn} not found in any external source.", isbn);
         return null;
-    }
-
-    // ── Open Library ─────────────────────────────────────────────────────
-    private async Task<IsbnLookupResult?> TryOpenLibraryAsync(string isbn, HttpClient http)
-    {
-        try
-        {
-            var url  = $"https://openlibrary.org/api/books?bibkeys=ISBN:{isbn}&format=json&jscmd=data";
-            var resp = await http.GetAsync(url);
-            if (!resp.IsSuccessStatusCode) return null;
-
-            var json = await resp.Content.ReadAsStringAsync();
-            if (string.IsNullOrWhiteSpace(json) || json == "{}") return null;
-
-            using var doc = JsonDocument.Parse(json);
-            var key = $"ISBN:{isbn}";
-            if (!doc.RootElement.TryGetProperty(key, out var book)) return null;
-
-            var title = Str(book, "title");
-
-            var author = "";
-            if (book.TryGetProperty("authors", out var authors))
-                author = string.Join(", ", authors.EnumerateArray()
-                    .Select(a => a.TryGetProperty("name", out var n) ? n.GetString() ?? "" : ""));
-
-            var publisher = "";
-            if (book.TryGetProperty("publishers", out var pubs) && pubs.GetArrayLength() > 0)
-                publisher = pubs[0].TryGetProperty("name", out var pn) ? pn.GetString() ?? "" : "";
-
-            int? year = null;
-            if (book.TryGetProperty("publish_date", out var pd))
-            {
-                var m = System.Text.RegularExpressions.Regex.Match(pd.GetString() ?? "", @"\d{4}");
-                if (m.Success) year = int.Parse(m.Value);
-            }
-
-            // Open Library cover image
-            var cover = "";
-            if (book.TryGetProperty("cover", out var cov))
-            {
-                if (cov.TryGetProperty("large", out var lg)) cover = lg.GetString() ?? "";
-                else if (cov.TryGetProperty("medium", out var md)) cover = md.GetString() ?? "";
-            }
-
-            return new IsbnLookupResult
-            {
-                Isbn = isbn, Title = title, Author = author,
-                Publisher = publisher, Year = year,
-                CoverThumbnail = cover, Source = "Open Library"
-            };
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Open Library lookup failed for ISBN {Isbn}", isbn);
-            return null;
-        }
     }
 
     // ── Google Books ─────────────────────────────────────────────────────

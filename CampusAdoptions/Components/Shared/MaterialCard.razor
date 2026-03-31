@@ -1,0 +1,154 @@
+@using CampusAdoptions.Models.Verba
+
+<div class="material-card">
+    <!-- Left green strip -->
+    <div class="material-card__strip">&#10003;</div>
+
+    <!-- Book thumbnail placeholder -->
+    <div class="material-card__thumb">&#128218;</div>
+
+    <!-- Material details -->
+    <div class="material-card__body">
+        <div class="material-card__title">@Material.Title</div>
+        <div class="material-card__author">@Material.Author</div>
+
+        <div class="material-card__details">
+            @if (!string.IsNullOrEmpty(Material.IsbnAdopted))
+            {
+                <div class="material-card__field">
+                    <span class="material-card__label">ISBN ADOPTED:</span>
+                    <span class="material-card__value">@Material.IsbnAdopted</span>
+                </div>
+            }
+            @if (!string.IsNullOrEmpty(Material.Isbn13))
+            {
+                <div class="material-card__field">
+                    <span class="material-card__label">ISBN-13:</span>
+                    <span class="material-card__value">@Material.Isbn13</span>
+                </div>
+            }
+            @if (!string.IsNullOrEmpty(Material.Isbn10))
+            {
+                <div class="material-card__field">
+                    <span class="material-card__label">ISBN-10:</span>
+                    <span class="material-card__value">@Material.Isbn10</span>
+                </div>
+            }
+            @if (!string.IsNullOrEmpty(Material.EIsbn))
+            {
+                <div class="material-card__field">
+                    <span class="material-card__label">eISBN:</span>
+                    <span class="material-card__value">@Material.EIsbn</span>
+                </div>
+            }
+            @if (!string.IsNullOrEmpty(Material.Publisher))
+            {
+                <div class="material-card__field">
+                    <span class="material-card__label">PUBLISHER:</span>
+                    <span class="material-card__value">@Material.Publisher</span>
+                </div>
+            }
+            @if (!string.IsNullOrEmpty(Material.Edition))
+            {
+                <div class="material-card__field">
+                    <span class="material-card__label">EDITION:</span>
+                    <span class="material-card__value">@Material.Edition</span>
+                </div>
+            }
+            @if (!string.IsNullOrEmpty(Material.PublicationDate))
+            {
+                <div class="material-card__field">
+                    <span class="material-card__label">PUB DATE:</span>
+                    <span class="material-card__value">@Material.PublicationDate</span>
+                </div>
+            }
+            @if (!string.IsNullOrEmpty(Material.ListPrice))
+            {
+                <div class="material-card__field">
+                    <span class="material-card__label">LIST PRICE:</span>
+                    <span class="material-card__value">@Material.ListPrice</span>
+                </div>
+            }
+            @if (!string.IsNullOrEmpty(Material.Binding))
+            {
+                <div class="material-card__field">
+                    <span class="material-card__label">BINDING:</span>
+                    <span class="material-card__value">@Material.Binding</span>
+                </div>
+            }
+        </div>
+
+        <div class="material-card__links">
+            <a href="#">VIEW ON ITEMS PAGE</a>
+            @if (Material.HasAccessibilityClaims)
+            {
+                <a href="#">ACCESSIBILITY INFO</a>
+            }
+        </div>
+    </div>
+
+    <!-- Right action panel -->
+    <div class="material-card__actions">
+        <button class="btn-verba btn-verba--danger btn-verba--sm" style="width:100%"
+                @onclick="() => OnRemove.InvokeAsync(Material)">
+            REMOVE FROM LIST
+        </button>
+
+        <select class="material-card__status-select"
+                value="@Material.Status"
+                @onchange="HandleStatusChange">
+            <option value="@MaterialStatus.Required">Required</option>
+            <option value="@MaterialStatus.Optional">Optional</option>
+            <option value="@MaterialStatus.Recommended">Recommended</option>
+        </select>
+
+        <div class="material-card__expand-row" @onclick="() => _showItemQuestions = !_showItemQuestions">
+            &#9662; ITEM QUESTIONS
+        </div>
+        @if (_showItemQuestions)
+        {
+            <div class="fs-11 text-muted" style="padding: 4px 0;">No item questions configured.</div>
+        }
+
+        <div class="material-card__expand-row" @onclick="() => _showAutoAccess = !_showAutoAccess">
+            &#9662; AUTO ACCESS
+        </div>
+        @if (_showAutoAccess)
+        {
+            <div class="fs-11 text-muted" style="padding: 4px 0;">Auto access configuration.</div>
+        }
+
+        <div class="material-card__icons">
+            <span class="material-card__icon-badge @(Material.HasDigitalMatch ? "material-card__icon-badge--green" : "material-card__icon-badge--gray")">
+                @(Material.HasDigitalMatch ? "\u2713" : "?") Digital Match
+            </span>
+            <span class="material-card__icon-badge @(Material.HasIaPrice ? "material-card__icon-badge--green" : "material-card__icon-badge--gray")">
+                @(Material.HasIaPrice ? "\u2713" : "?") IA Price
+            </span>
+        </div>
+
+        @if (!Material.HasIaPrice)
+        {
+            <span class="badge-orange" style="text-align:center; display:block;">NO IA INTEREST</span>
+        }
+
+        <button class="btn-verba btn-verba--sm" style="width:100%; margin-top: 4px;">MESSAGE USERS</button>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Material Material { get; set; } = default!;
+    [Parameter] public EventCallback<Material> OnRemove { get; set; }
+    [Parameter] public EventCallback<(Material material, MaterialStatus status)> OnStatusChanged { get; set; }
+
+    private bool _showItemQuestions;
+    private bool _showAutoAccess;
+
+    private void HandleStatusChange(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<MaterialStatus>(e.Value?.ToString(), out var newStatus))
+        {
+            OnStatusChanged.InvokeAsync((Material, newStatus));
+        }
+    }
+}

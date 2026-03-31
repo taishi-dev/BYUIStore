@@ -1,0 +1,14 @@
+@page "/Account/AccessDenied"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+
+<div class="d-flex flex-column align-center justify-center" style="min-height:60vh;">
+    <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Large" Color="Color.Error"
+             Style="font-size:4rem;" />
+    <MudText Typo="Typo.h5" Class="mt-4">Access Denied</MudText>
+    <MudText Typo="Typo.body2" Color="Color.Dark" Class="mt-2">
+        You do not have permission to view that page.
+    </MudText>
+    <MudButton Href="/" Variant="Variant.Filled" Color="Color.Primary" Class="mt-4">
+        Back to Dashboard
+    </MudButton>
+</div>

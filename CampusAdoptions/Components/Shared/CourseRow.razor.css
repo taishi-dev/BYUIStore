@@ -1,0 +1,11 @@
+/* Scoped styles for CourseRow */
+
+::deep .course-row__toggle:focus {
+    outline: 2px solid var(--color-blue-primary);
+    outline-offset: 2px;
+}
+
+::deep .section-item:focus-visible {
+    outline: 2px solid var(--color-blue-primary);
+    outline-offset: -2px;
+}

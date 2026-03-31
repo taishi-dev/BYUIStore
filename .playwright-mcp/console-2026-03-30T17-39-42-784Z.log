@@ -1,0 +1,10 @@
+[   16204ms] [ERROR] [2026-03-30T17:39:58.987Z] Error: There was an unhandled exception on the current circuit, so this circuit will be terminated. For more details turn on detailed exceptions by setting 'DetailedErrors: true' in 'appSettings.Development.json' or set 'CircuitOptions.DetailedErrors'.  @ http://localhost:5024/_framework/blazor.web.js:0
+[   41568ms] Error: Cannot send data if the connection is not in the 'Connected' State.
+    at Mn.send (http://localhost:5024/_framework/blazor.web.js:1:87196)
+    at Cn._sendMessage (http://localhost:5024/_framework/blazor.web.js:1:64679)
+    at Cn._sendWithProtocol (http://localhost:5024/_framework/blazor.web.js:1:64769)
+    at Cn.send (http://localhost:5024/_framework/blazor.web.js:1:64877)
+    at Ho.updateRootComponents (http://localhost:5024/_framework/blazor.web.js:1:137464)
+    at sr (http://localhost:5024/_framework/blazor.web.js:1:165257)
+    at Pi.refreshRootComponents (http://localhost:5024/_framework/blazor.web.js:1:194485)
+    at http://localhost:5024/_framework/blazor.web.js:1:192714

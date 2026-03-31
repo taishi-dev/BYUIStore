@@ -1,0 +1,11 @@
+/* Scoped styles for VerbaCourseDetail */
+
+::deep .detail-message-bar input:focus {
+    outline: none;
+    border-color: var(--color-blue-primary);
+    box-shadow: 0 0 0 2px rgba(42, 127, 186, 0.15);
+}
+
+::deep .tab-panel {
+    min-height: 300px;
+}

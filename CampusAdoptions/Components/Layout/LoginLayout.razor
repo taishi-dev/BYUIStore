@@ -1,0 +1,24 @@
+@inherits LayoutComponentBase
+
+<MudThemeProvider Theme="_verbaTheme" />
+
+<div style="min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; background:linear-gradient(135deg, #f0f2f5 0%, #e8eaef 100%);">
+    @Body
+
+    <MudText Typo="Typo.caption" Class="mt-5" Style="color:#445; letter-spacing:.3px;">
+        &copy; 2026 VERBA | VITALSOURCE &nbsp;&middot;&nbsp;
+        <MudLink Href="#" Underline="Underline.Hover" Style="color:#667; font-size:inherit;">Privacy Policy</MudLink>
+    </MudText>
+</div>
+
+@code {
+    private readonly MudTheme _verbaTheme = new()
+    {
+        PaletteLight = new PaletteLight()
+        {
+            Primary = "#1c2236",
+            Secondary = "#0066cc",
+            Success = "#2e7d32",
+        }
+    };
+}

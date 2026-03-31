@@ -21,8 +21,8 @@ public class DbInitializer
 
     public async Task SeedAsync()
     {
-        // ── 1. Apply any pending EF migrations ──────────────────────────
-        await _context.Database.MigrateAsync();
+        // ── 1. Ensure database exists (skip MigrateAsync to avoid errors on existing tables)
+        await _context.Database.EnsureCreatedAsync();
 
         // ── 2. Skip if data already exists ──────────────────────────────
         if (await _context.CourseRequests.AnyAsync())

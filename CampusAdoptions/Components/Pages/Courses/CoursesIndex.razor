@@ -1,0 +1,263 @@
+@page "/courses/legacy"
+@page "/courses/legacy/my"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+@using CampusAdoptions.Data
+@using CampusAdoptions.Helpers
+@using Microsoft.EntityFrameworkCore
+@using System.Security.Claims
+
+@inject AppDbContext Db
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+
+<PageTitle>Courses</PageTitle>
+
+<MudGrid>
+    <!-- Sidebar -->
+    <MudItem xs="12" md="3">
+        <MudPaper Elevation="2" Class="pa-4">
+            <MudTextField @bind-Value="_search" Label="Search courses"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true" DebounceInterval="300"
+                          OnDebounceIntervalElapsed="ApplyFilters" />
+
+            <MudSelect T="string" Value="_selectedDept" Label="Department" Class="mt-3"
+                       ValueChanged="OnDeptChanged">
+                <MudSelectItem T="string" Value="@("ALL")">ALL DEPARTMENTS</MudSelectItem>
+                @foreach (var dept in _departments)
+                {
+                    <MudSelectItem T="string" Value="@dept">@dept</MudSelectItem>
+                }
+            </MudSelect>
+
+            @if (!_isMyCourses)
+            {
+                <MudButton Href="/requests/submit" Variant="Variant.Filled" Color="Color.Warning"
+                           FullWidth="true" Class="mt-4"
+                           StartIcon="@Icons.Material.Filled.AddCircle">
+                    New Request
+                </MudButton>
+            }
+        </MudPaper>
+    </MudItem>
+
+    <!-- Main Content -->
+    <MudItem xs="12" md="9">
+        <!-- Status Tabs -->
+        <MudChipSet T="string" @bind-SelectedValue="_currentFilter" SelectionMode="SelectionMode.SingleSelection"
+                    CheckMark="false" Class="mb-3" Color="Color.Primary" Variant="Variant.Text">
+            <MudChip T="string" Value="@("all")">All (@_countTotal)</MudChip>
+            <MudChip T="string" Value="@("pending")" Style="color:#ed6c02;">Incomplete (@_countPending)</MudChip>
+            <MudChip T="string" Value="@("verified")" Style="color:#0288d1;">Submitted (@_countVerified)</MudChip>
+            <MudChip T="string" Value="@("approved")" Style="color:#2e7d32;">Approved (@_countApproved)</MudChip>
+            <MudChip T="string" Value="@("rejected")" Style="color:#d32f2f;">Rejected (@_countRejected)</MudChip>
+        </MudChipSet>
+
+        @if (_loading)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+        }
+        else if (!_filteredGroups.Any())
+        {
+            <MudPaper Elevation="2" Class="pa-8 text-center">
+                <MudIcon Icon="@Icons.Material.Filled.SearchOff" Style="font-size:3rem;" Color="Color.Dark" />
+                <MudText Typo="Typo.h6" Class="mt-3" Color="Color.Dark">No courses match your filters.</MudText>
+            </MudPaper>
+        }
+        else
+        {
+            <MudExpansionPanels MultiExpansion="true">
+                @foreach (var group in _filteredGroups)
+                {
+                    <MudExpansionPanel>
+                        <TitleContent>
+                            <div class="d-flex align-center gap-3">
+                                <MudText Typo="Typo.subtitle1" Style="font-weight:600;">@group.CourseNumber</MudText>
+                                <MudText Typo="Typo.body2" Color="Color.Dark">@group.CourseName</MudText>
+                                <MudSpacer />
+                                <StatusBadge Status="@group.OverallStatus.ToString()" />
+                                <MudChip T="string" Size="Size.Small" Color="Color.Default">
+                                    @group.Sections.Count section(s)
+                                </MudChip>
+                            </div>
+                        </TitleContent>
+                        <ChildContent>
+                            @if (group.HasNoRequest)
+                            {
+                                <MudAlert Severity="Severity.Info" Dense="true">
+                                    No requests submitted for this course yet.
+                                </MudAlert>
+                            }
+                            else
+                            {
+                                <MudTable Items="group.Sections" Hover="true" Dense="true" Elevation="0">
+                                    <HeaderContent>
+                                        <MudTh>Section</MudTh>
+                                        <MudTh>Semester</MudTh>
+                                        <MudTh>Submitted By</MudTh>
+                                        <MudTh>Items</MudTh>
+                                        <MudTh>Status</MudTh>
+                                        <MudTh></MudTh>
+                                    </HeaderContent>
+                                    <RowTemplate>
+                                        <MudTd>@(context.Section ?? "—")</MudTd>
+                                        <MudTd>@context.Semester</MudTd>
+                                        <MudTd>@context.Submitter?.FullName</MudTd>
+                                        <MudTd>
+                                            <MudChip T="string" Size="Size.Small" Color="Color.Default">
+                                                @context.Items.Count
+                                            </MudChip>
+                                        </MudTd>
+                                        <MudTd><StatusBadge Status="@context.Status.ToString()" /></MudTd>
+                                        <MudTd>
+                                            <MudButton Href="@($"/courses/materials?course={Uri.EscapeDataString(context.CourseNumber)}")"
+                                                       Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                                                       StartIcon="@Icons.Material.Filled.Visibility">
+                                                Materials
+                                            </MudButton>
+                                        </MudTd>
+                                    </RowTemplate>
+                                </MudTable>
+                            }
+                        </ChildContent>
+                    </MudExpansionPanel>
+                }
+            </MudExpansionPanels>
+        }
+    </MudItem>
+</MudGrid>
+
+@code {
+    private bool _loading = true;
+    private bool _isMyCourses;
+    private string _search = "";
+    private string _selectedDept = "ALL";
+    private string _currentFilter = "all";
+
+    private int _countTotal, _countPending, _countVerified, _countApproved, _countRejected;
+    private List<string> _departments = [];
+    private List<CourseGroup> _allGroups = [];
+    private List<CourseGroup> _filteredGroups = [];
+    private int _currentUserId;
+    private string _currentRole = "";
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var uri = new Uri(Navigation.Uri);
+        _isMyCourses = uri.AbsolutePath.Contains("/my", StringComparison.OrdinalIgnoreCase);
+
+        if (AuthState is not null)
+        {
+            var state = await AuthState;
+            _currentUserId = int.Parse(state.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "0");
+            _currentRole = state.User.FindFirstValue(ClaimTypes.Role) ?? "";
+        }
+
+        // Professors always see only their courses
+        if (_currentRole == "Professor")
+            _isMyCourses = true;
+
+        await LoadData();
+        _loading = false;
+    }
+
+    private async Task LoadData()
+    {
+        if (_isMyCourses)
+        {
+            var requests = await Db.CourseRequests
+                .Include(r => r.Submitter).Include(r => r.Items)
+                .Where(r => r.SubmitterId == _currentUserId)
+                .OrderBy(r => r.CourseNumber).ThenBy(r => r.Section)
+                .ToListAsync();
+
+            _allGroups = requests
+                .GroupBy(r => r.CourseNumber)
+                .Select(g => new CourseGroup
+                {
+                    CourseNumber = g.Key,
+                    CourseName = g.First().CourseName,
+                    Sections = g.ToList()
+                })
+                .OrderBy(g => g.CourseNumber)
+                .ToList();
+        }
+        else
+        {
+            var catalogCourses = await Db.Courses.OrderBy(c => c.CourseNumber).ToListAsync();
+            var requests = await Db.CourseRequests
+                .Include(r => r.Submitter).Include(r => r.Items).ToListAsync();
+
+            var requestsByCourse = requests.ToLookup(r => r.CourseNumber, StringComparer.OrdinalIgnoreCase);
+            var catalogNumbers = catalogCourses.Select(c => c.CourseNumber).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var fromCatalog = catalogCourses
+                .GroupBy(c => c.CourseNumber, StringComparer.OrdinalIgnoreCase)
+                .Select(g => new CourseGroup
+                {
+                    CourseNumber = g.Key,
+                    CourseName = g.First().CourseName,
+                    Sections = requestsByCourse[g.Key].OrderBy(r => r.Section).ToList(),
+                });
+
+            var orphaned = requests
+                .Where(r => !catalogNumbers.Contains(r.CourseNumber))
+                .GroupBy(r => r.CourseNumber, StringComparer.OrdinalIgnoreCase)
+                .Select(g => new CourseGroup
+                {
+                    CourseNumber = g.Key,
+                    CourseName = g.First().CourseName,
+                    Sections = g.OrderBy(r => r.Section).ToList(),
+                });
+
+            _allGroups = fromCatalog.Concat(orphaned).OrderBy(g => g.CourseNumber).ToList();
+        }
+
+        var allSections = _allGroups.SelectMany(g => g.Sections).ToList();
+        _countPending  = allSections.Count(r => r.Status == RequestStatus.PendingVerification);
+        _countVerified = allSections.Count(r => r.Status == RequestStatus.Verified);
+        _countApproved = allSections.Count(r => r.Status == RequestStatus.Approved);
+        _countRejected = allSections.Count(r => r.Status == RequestStatus.Rejected);
+        _countTotal    = _allGroups.Count;
+
+        _departments = _allGroups.Select(g => g.Department).Distinct().OrderBy(d => d).ToList();
+
+        ApplyFilters();
+    }
+
+    private void OnDeptChanged(string value)
+    {
+        _selectedDept = value;
+        ApplyFilters();
+    }
+
+    private void ApplyFilters()
+    {
+        IEnumerable<CourseGroup> filtered = _currentFilter switch
+        {
+            "pending"  => _allGroups.Where(g => g.Sections.Any(s => s.Status == RequestStatus.PendingVerification)),
+            "verified" => _allGroups.Where(g => g.Sections.Any(s => s.Status == RequestStatus.Verified)),
+            "approved" => _allGroups.Where(g => g.Sections.Any(s => s.Status == RequestStatus.Approved)),
+            "rejected" => _allGroups.Where(g => g.Sections.Any(s => s.Status == RequestStatus.Rejected)),
+            _          => _allGroups
+        };
+
+        if (_selectedDept != "ALL")
+            filtered = filtered.Where(g => g.CourseNumber.StartsWith(_selectedDept, StringComparison.OrdinalIgnoreCase));
+
+        if (!string.IsNullOrWhiteSpace(_search))
+        {
+            var s = _search.Trim().ToLower();
+            filtered = filtered.Where(g =>
+                g.CourseNumber.ToLower().Contains(s) ||
+                g.CourseName.ToLower().Contains(s));
+        }
+
+        _filteredGroups = filtered.ToList();
+        StateHasChanged();
+    }
+}

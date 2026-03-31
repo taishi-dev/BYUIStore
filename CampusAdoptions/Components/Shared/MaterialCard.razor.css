@@ -1,0 +1,16 @@
+/* Scoped styles for MaterialCard */
+
+::deep .material-card:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+::deep .btn-verba--danger:focus {
+    outline: 2px solid var(--color-red);
+    outline-offset: 2px;
+}
+
+::deep .material-card__status-select:focus {
+    outline: none;
+    border-color: var(--color-blue-primary);
+    box-shadow: 0 0 0 2px rgba(42, 127, 186, 0.15);
+}

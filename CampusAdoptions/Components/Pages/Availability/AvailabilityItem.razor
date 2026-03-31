@@ -1,0 +1,172 @@
+@page "/availability/item"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+@using CampusAdoptions.Data
+@using Microsoft.EntityFrameworkCore
+
+@inject BookAvailabilityService Svc
+@inject AppDbContext Db
+
+<PageTitle>Item Detail — @_isbn</PageTitle>
+
+<MudButton Href="/availability" Variant="Variant.Text" Color="Color.Primary"
+           StartIcon="@Icons.Material.Filled.ArrowBack" Class="mb-3">
+    BACK TO ITEMS
+</MudButton>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (_avail is null)
+{
+    <MudAlert Severity="Severity.Warning">No availability data found for ISBN @_isbn</MudAlert>
+}
+else
+{
+    <MudGrid>
+        <MudItem xs="12" md="8">
+            <MudPaper Elevation="2" Class="pa-6 mb-4">
+                <MudText Typo="Typo.h5" Style="font-weight:800;">@_avail.Title</MudText>
+                <MudText Typo="Typo.body1" Color="Color.Dark" Class="mb-3">@_avail.Author</MudText>
+
+                <div class="d-flex gap-6 flex-wrap mb-4">
+                    <div><MudText Typo="Typo.overline">ISBN</MudText><MudText>@_avail.Isbn</MudText></div>
+                    <div><MudText Typo="Typo.overline">Publisher</MudText><MudText>@_avail.Publisher</MudText></div>
+                    <div><MudText Typo="Typo.overline">Edition</MudText><MudText>@_avail.Edition</MudText></div>
+                </div>
+
+                <MudDivider Class="my-3" />
+
+                <!-- Availability Checklist -->
+                <MudText Typo="Typo.subtitle1" Style="font-weight:600;" Class="mb-2">Availability</MudText>
+                <MudList T="string" Dense="true">
+                    <MudListItem Icon="@(_avail.PrintAvailableOnGoogle ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Cancel)"
+                                 IconColor="@(_avail.PrintAvailableOnGoogle ? Color.Success : Color.Error)">
+                        Print on Google Books
+                        @if (_avail.PrintRetailPrice.HasValue)
+                        { <text> — $@_avail.PrintRetailPrice.Value.ToString("F2")</text> }
+                    </MudListItem>
+                    <MudListItem Icon="@(_avail.EbookAvailableOnGoogle ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Cancel)"
+                                 IconColor="@(_avail.EbookAvailableOnGoogle ? Color.Success : Color.Error)">
+                        eBook on Google Books
+                        @if (_avail.EbookPrice.HasValue)
+                        { <text> — $@_avail.EbookPrice.Value.ToString("F2")</text> }
+                    </MudListItem>
+                    <MudListItem Icon="@(_avail.DigitalAvailableOnVitalSource ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Cancel)"
+                                 IconColor="@(_avail.DigitalAvailableOnVitalSource ? Color.Success : Color.Error)">
+                        Digital on VitalSource
+                        @if (_avail.VitalSourcePrice.HasValue)
+                        { <text> — $@_avail.VitalSourcePrice.Value.ToString("F2") (@(_avail.VitalSourcePriceDays == 0 ? "Lifetime" : $"{_avail.VitalSourcePriceDays}-day"))</text> }
+                    </MudListItem>
+                </MudList>
+
+                @if (_avail.AffordabilityScore.HasValue)
+                {
+                    <MudDivider Class="my-3" />
+                    <MudText Typo="Typo.subtitle1" Style="font-weight:600;">Affordability Score</MudText>
+                    <MudProgressLinear Value="@_avail.AffordabilityScore.Value" Max="100"
+                                       Color="@(_avail.AffordabilityScore >= 60 ? Color.Success : _avail.AffordabilityScore >= 30 ? Color.Warning : Color.Error)"
+                                       Size="Size.Large" Rounded="true" Class="mt-2">
+                        <MudText Typo="Typo.body2" Style="font-weight:700;">@_avail.AffordabilityScore / 100</MudText>
+                    </MudProgressLinear>
+                }
+
+                @if (!string.IsNullOrEmpty(_avail.AmazonUrl))
+                {
+                    <MudDivider Class="my-3" />
+                    <MudText Typo="Typo.overline">External Links</MudText>
+                    <div class="d-flex gap-3 mt-1">
+                        @if (!string.IsNullOrEmpty(_avail.AmazonUrl))
+                        {
+                            <MudLink Href="@_avail.AmazonUrl" Target="_blank" Typo="Typo.body2">Amazon</MudLink>
+                        }
+                        @if (!string.IsNullOrEmpty(_avail.GoogleBuyLink))
+                        {
+                            <MudLink Href="@_avail.GoogleBuyLink" Target="_blank" Typo="Typo.body2">Google Books</MudLink>
+                        }
+                        @if (!string.IsNullOrEmpty(_avail.VitalSourceUrl))
+                        {
+                            <MudLink Href="@_avail.VitalSourceUrl" Target="_blank" Typo="Typo.body2">VitalSource</MudLink>
+                        }
+                    </div>
+                }
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            <MudPaper Elevation="2" Class="pa-4 mb-4">
+                <MudText Typo="Typo.subtitle1" Style="font-weight:600;" Class="mb-2">
+                    Term Average: @_termAvg / 100
+                </MudText>
+                <MudProgressLinear Value="@_termAvg" Max="100" Color="Color.Primary"
+                                   Size="Size.Large" Rounded="true" />
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <!-- Course Adoptions using this ISBN -->
+    @if (_adoptions.Any())
+    {
+        <MudPaper Elevation="2" Class="mt-4">
+            <MudToolBar Dense="true" Style="background:#f5f5f5;">
+                <MudIcon Icon="@Icons.Material.Filled.School" Class="mr-2" />
+                <MudText Typo="Typo.subtitle1" Style="font-weight:600;">Course Adoptions Using This ISBN</MudText>
+            </MudToolBar>
+            <MudTable Items="_adoptions" Hover="true" Dense="true">
+                <HeaderContent>
+                    <MudTh>Course</MudTh>
+                    <MudTh>Semester</MudTh>
+                    <MudTh>Submitted By</MudTh>
+                    <MudTh>Status</MudTh>
+                    <MudTh>Date</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd><strong>@context.CourseNumber</strong> — @context.CourseName</MudTd>
+                    <MudTd>@context.Semester</MudTd>
+                    <MudTd>@context.Submitter?.FullName</MudTd>
+                    <MudTd><StatusBadge Status="@context.Status.ToString()" /></MudTd>
+                    <MudTd Style="font-size:0.85rem; color:#888;">@context.SubmittedAt.ToString("MMM d, yyyy")</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+    }
+}
+
+@code {
+    [SupplyParameterFromQuery] public string? Isbn { get; set; }
+
+    private bool _loading = true;
+    private string _isbn = "";
+    private BookAvailabilityItem? _avail;
+    private List<CourseRequest> _adoptions = [];
+    private int _termAvg = 50;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isbn = (Isbn ?? "").Replace("-", "").Trim();
+        if (string.IsNullOrEmpty(_isbn)) return;
+
+        _avail = await Svc.CheckSingleIsbnAsync(_isbn);
+
+        _adoptions = await Db.CourseRequests
+            .Include(r => r.Items)
+            .Include(r => r.Submitter)
+            .Where(r => r.Items.Any(i => i.Isbn == _isbn))
+            .OrderByDescending(r => r.SubmittedAt)
+            .Take(20)
+            .ToListAsync();
+
+        var semesters = await Svc.GetAvailableSemestersAsync();
+        var latestSemester = semesters.FirstOrDefault() ?? "";
+        if (!string.IsNullOrEmpty(latestSemester))
+        {
+            var allBooks = await Svc.GetReportAsync(latestSemester);
+            _termAvg = allBooks.Any(b => b.AffordabilityScore.HasValue)
+                ? (int)Math.Round(allBooks.Where(b => b.AffordabilityScore.HasValue).Average(b => b.AffordabilityScore!.Value))
+                : 50;
+        }
+
+        _loading = false;
+    }
+}

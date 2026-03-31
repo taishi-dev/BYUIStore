@@ -51,4 +51,7 @@ public class RequestItem
     /// The item stays in the DB until the material manager processes the removal.
     /// </summary>
     public DateTime? RemovalRequestedAt { get; set; }
+
+    // ── Suggestions ────────────────────────────────────────────────────────
+    public ICollection<MaterialSuggestion> Suggestions { get; set; } = new List<MaterialSuggestion>();
 }

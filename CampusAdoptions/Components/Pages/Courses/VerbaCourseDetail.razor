@@ -1,0 +1,641 @@
+@page "/courses/{CourseId}"
+@rendermode InteractiveServer
+@using CampusAdoptions.Models.Verba
+@using CampusAdoptions.Services
+@inject CourseService CourseService
+@inject NavigationManager Nav
+@inject IsbnDirectLookupService IsbnLookup
+@inject IsbnLookupService TitleSearch
+@inject BookAvailabilityService AvailabilityService
+
+@if (_course == null)
+{
+    <p class="tab-panel">Course not found.</p>
+    return;
+}
+
+<!-- Top navigation -->
+<nav class="top-nav">
+    <a class="top-nav__brand" href="/">BYU IDAHO UNIVERSITY STORE</a>
+    <div class="top-nav__links">
+        <a class="top-nav__link top-nav__link--active" href="/courses">COURSES</a>
+        <a class="top-nav__link" href="#">ITEMS</a>
+        <a class="top-nav__link" href="#">DEPARTMENTS</a>
+        <a class="top-nav__link" href="#">USERS</a>
+    </div>
+    <div class="top-nav__right">
+        <button class="btn-help">GET HELP</button>
+    </div>
+</nav>
+
+<!-- Detail header -->
+<div class="detail-header">
+    <span class="detail-header__title">SPRING 2026 / @_course.Name</span>
+    <button class="btn-verba" @onclick='() => Nav.NavigateTo("/courses")'>
+        &#8592; BACK TO COURSES
+    </button>
+    @if (_nextCourseId != null)
+    {
+        <button class="btn-verba" @onclick='() => Nav.NavigateTo($"/courses/{_nextCourseId}")'>
+            NEXT COURSE &#8594;
+        </button>
+    }
+    <button class="btn-verba">&#9654; WATCH VIDEO</button>
+    <div class="btn-dropdown" style="display:inline-block; position:relative;">
+        <button class="btn-verba" @onclick="ToggleDetailActions" @onclick:stopPropagation>
+            COURSE ACTIONS &#9662;
+        </button>
+        @if (_showDetailActions)
+        {
+            <div class="btn-dropdown__backdrop" @onclick="CloseDetailActions"></div>
+            <div class="btn-dropdown__menu btn-dropdown__menu--open">
+                <button class="btn-dropdown__item" @onclick='() => DoDetailAction("Manage Users")'>Manage Users</button>
+                <button class="btn-dropdown__item" @onclick='() => DoDetailAction("Edit Course Attributes")'>Edit Course Attributes</button>
+                <button class="btn-dropdown__item" @onclick='() => DoDetailAction("Push to Back Office")'>Push to Back Office</button>
+                <button class="btn-dropdown__item" @onclick='() => DoDetailAction("Add Section")'>Add Section</button>
+                <button class="btn-dropdown__item" @onclick='() => DoDetailAction("Faculty Views")'>Faculty Views</button>
+                <button class="btn-dropdown__item" @onclick='() => DoDetailAction("Print Adoption")'>Print Adoption</button>
+            </div>
+        }
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_detailActionToast))
+{
+    <div class="action-toast" @onclick="() => _detailActionToast = null">
+        <span class="action-toast__icon">&#9989;</span>
+        @_detailActionToast
+        <button class="action-toast__close">&times;</button>
+    </div>
+}
+
+<!-- Two-column layout -->
+<div class="page-layout">
+    <!-- Left sidebar: sections -->
+    <aside class="detail-sidebar">
+        <button class="btn-verba detail-sidebar__btn">MERGE OR SPLIT SECTIONS</button>
+
+        <div class="detail-sidebar__dots">
+            @for (int i = 0; i < Math.Min(_course.Sections.Count, 5); i++)
+            {
+                var idx = i;
+                <span class="detail-sidebar__dot @(idx == _activeSection ? "detail-sidebar__dot--active" : "")"></span>
+            }
+        </div>
+
+        <ul class="section-nav">
+            @for (int i = 0; i < _course.Sections.Count; i++)
+            {
+                var idx = i;
+                var sec = _course.Sections[idx];
+                <li class="section-nav__item @(idx == _activeSection ? "section-nav__item--active" : "")"
+                    @onclick="() => SelectSection(idx)">
+                    <span class="section-nav__icon">&#9998;</span>
+                    <span>@sec.Id &mdash; @sec.InstructorName</span>
+                    @if (sec.HasStar)
+                    {
+                        <span class="section-nav__star">&#9733;</span>
+                    }
+                </li>
+            }
+        </ul>
+    </aside>
+
+    <!-- Main panel -->
+    <div class="detail-main">
+        <!-- Message bar + status pill -->
+        <div class="detail-message-bar">
+            <input type="text" placeholder="Type a message..." />
+            <span class="status-pill @GetStatusPillClass(ActiveSection.Status)">
+                @ActiveSection.Status.ToString().ToUpper()
+                <span class="status-pill__icons">&#8635; &#9662;</span>
+            </span>
+        </div>
+
+        <!-- Tab strip -->
+        <div class="tab-strip">
+            <button class="tab-strip__tab @(_activeTab == "selected" ? "tab-strip__tab--active" : "")"
+                    @onclick='() => _activeTab = "selected"'>
+                <span class="tab-strip__badge">@ActiveSection.Materials.Count</span>
+                SELECTED MATERIALS
+            </button>
+            <button class="tab-strip__tab @(_activeTab == "copy" ? "tab-strip__tab--active" : "")"
+                    @onclick='() => _activeTab = "copy"'>
+                COPY ANOTHER ADOPTION
+            </button>
+            <button class="tab-strip__tab @(_activeTab == "add" ? "tab-strip__tab--active" : "")"
+                    @onclick='() => _activeTab = "add"'>
+                ADD MATERIALS
+            </button>
+            <button class="tab-strip__tab @(_activeTab == "messages" ? "tab-strip__tab--active" : "")"
+                    @onclick='() => _activeTab = "messages"'>
+                <span class="tab-strip__badge">0</span>
+                MESSAGES &amp; ACTIVITY
+            </button>
+        </div>
+
+        <!-- Tab panels -->
+        @if (_activeTab == "selected")
+        {
+            <div class="tab-panel">
+                @if (_course.NoTextRequired)
+                {
+                    <div class="ntr-banner">
+                        <span class="ntr-banner__icon">&#9888;</span>
+                        APPROVED WITH NO TEXT REQUIRED
+                    </div>
+                }
+                else if (ActiveSection.Materials.Count == 0)
+                {
+                    <div class="ntr-banner">
+                        <span class="ntr-banner__icon">&#128218;</span>
+                        No materials have been selected for this section yet.
+                    </div>
+                }
+                else
+                {
+                    @foreach (var material in ActiveSection.Materials)
+                    {
+                        <CampusAdoptions.Components.Shared.MaterialCard
+                            Material="material"
+                            OnRemove="(m) => RemoveMaterial(m)"
+                            OnStatusChanged="(args) => ChangeMaterialStatus(args)" />
+                    }
+                }
+            </div>
+        }
+        else if (_activeTab == "copy")
+        {
+            <div class="tab-panel">
+                <div class="copy-adoption">
+                    <div class="copy-adoption__filters">
+                        <div class="copy-adoption__field">
+                            <label>TERM</label>
+                            <select @bind="_copyTerm">
+                                <option value="FALL 2025">FALL 2025</option>
+                                <option value="SPRING 2025">SPRING 2025</option>
+                                <option value="WINTER 2025">WINTER 2025</option>
+                            </select>
+                        </div>
+                        <div class="copy-adoption__field">
+                            <label>COURSE</label>
+                            <select @bind="_copyCourse">
+                                <option value="">Select a course...</option>
+                                <option value="@_course.Id">@_course.Name</option>
+                            </select>
+                        </div>
+                        <div class="copy-adoption__field">
+                            <label>INSTRUCTOR</label>
+                            <select @bind="_copyInstructor">
+                                <option value="">Select instructor...</option>
+                                @foreach (var s in _course.Sections)
+                                {
+                                    <option value="@s.InstructorName">@s.InstructorName</option>
+                                }
+                            </select>
+                        </div>
+                        <button class="btn-verba btn-verba--primary">VIEW ADOPTION</button>
+                        <button class="btn-verba btn-verba--green">RE-USE ALL MATERIALS</button>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(_copyCourse) && !string.IsNullOrEmpty(_copyInstructor))
+                    {
+                        <div class="copy-adoption__viewing">
+                            VIEWING ADOPTION: @_copyTerm &bull; @_copyCourse &bull; @_copyInstructor
+                        </div>
+
+                        @foreach (var material in _copyMaterials)
+                        {
+                            <div class="material-card" style="margin-bottom: 12px;">
+                                <div class="material-card__strip">&#10003;</div>
+                                <div class="material-card__body">
+                                    <div class="material-card__title">@material.Title</div>
+                                    <div class="material-card__author">@material.Author</div>
+                                    <div class="material-card__details">
+                                        @if (!string.IsNullOrEmpty(material.Isbn13))
+                                        {
+                                            <div class="material-card__field">
+                                                <span class="material-card__label">ISBN-13:</span>
+                                                <span class="material-card__value">@material.Isbn13</span>
+                                            </div>
+                                        }
+                                        @if (!string.IsNullOrEmpty(material.Publisher))
+                                        {
+                                            <div class="material-card__field">
+                                                <span class="material-card__label">PUBLISHER:</span>
+                                                <span class="material-card__value">@material.Publisher</span>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                                <div class="material-card__actions">
+                                    <button class="btn-verba btn-verba--primary" style="width:100%">ADD TO ADOPTION</button>
+                                </div>
+                            </div>
+                        }
+
+                        <!-- Affordability slider -->
+                        <div class="affordability-bar">
+                            <div class="affordability-bar__label">AFFORDABILITY SCORE</div>
+                            <div class="affordability-bar__track">
+                                <div class="affordability-bar__fill" style="width: 42%"></div>
+                            </div>
+                            <div class="affordability-bar__value">42 / 100</div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+        else if (_activeTab == "add")
+        {
+            <div class="tab-panel">
+                <div style="display:flex; gap:8px; max-width:600px; align-items:center;">
+                    <input type="text" class="add-search-input"
+                           placeholder="Search by title, author, or ISBN..."
+                           @bind="_addSearchTerm"
+                           @onkeydown="HandleSearchKeyDown" />
+                    <button class="btn-verba btn-verba--primary" @onclick="DoSearch"
+                            disabled="@_isSearching">
+                        @(_isSearching ? "SEARCHING..." : "SEARCH")
+                    </button>
+                </div>
+
+                @if (string.IsNullOrWhiteSpace(_addSearchTerm) && _isbnResult == null && _titleResults.Count == 0)
+                {
+                    <p class="text-muted" style="margin-top: 12px;">
+                        Enter a title, author, or ISBN to search for materials to add.
+                    </p>
+                }
+
+                @if (!string.IsNullOrEmpty(_searchError))
+                {
+                    <div class="search-error">@_searchError</div>
+                }
+
+                @* ── ISBN Direct Lookup Result ─────────────────────────── *@
+                @if (_isbnResult != null)
+                {
+                    <div class="isbn-result-card">
+                        <div class="isbn-result-card__header">
+                            @if (!string.IsNullOrEmpty(_isbnResult.CoverThumbnail))
+                            {
+                                <img src="@_isbnResult.CoverThumbnail" alt="Cover"
+                                     class="isbn-result-card__cover" />
+                            }
+                            <div class="isbn-result-card__info">
+                                <div class="isbn-result-card__title">@_isbnResult.Title</div>
+                                <div class="isbn-result-card__author">@_isbnResult.Author</div>
+                                <div class="isbn-result-card__meta">
+                                    <span><strong>ISBN:</strong> @_isbnResult.Isbn</span>
+                                    @if (!string.IsNullOrEmpty(_isbnResult.Publisher))
+                                    {
+                                        <span><strong>Publisher:</strong> @_isbnResult.Publisher</span>
+                                    }
+                                    @if (!string.IsNullOrEmpty(_isbnResult.Edition))
+                                    {
+                                        <span><strong>Edition:</strong> @_isbnResult.Edition</span>
+                                    }
+                                    @if (_isbnResult.Year.HasValue)
+                                    {
+                                        <span><strong>Published:</strong> @_isbnResult.Year</span>
+                                    }
+                                    @if (!string.IsNullOrEmpty(_isbnResult.Source))
+                                    {
+                                        <span class="isbn-result-card__source">Source: @_isbnResult.Source</span>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+
+                        @* ── Pricing & Availability ─────────────────────── *@
+                        @if (_availData != null)
+                        {
+                            <div class="pricing-section">
+                                <div class="pricing-section__title">PRICING &amp; AVAILABILITY</div>
+
+                                <div class="pricing-grid">
+                                    @* Print Price *@
+                                    @if (_availData.PrintRetailPrice.HasValue || _availData.PrintListPrice.HasValue)
+                                    {
+                                        <div class="pricing-tier">
+                                            <div class="pricing-tier__label">Print</div>
+                                            <div class="pricing-tier__price">
+                                                $@((_availData.PrintRetailPrice ?? _availData.PrintListPrice)?.ToString("F2"))
+                                            </div>
+                                            <div class="pricing-tier__type">List Price</div>
+                                        </div>
+                                    }
+
+                                    @* VitalSource Rental Tiers *@
+                                    @if (_availData.DigitalAvailableOnVitalSource)
+                                    {
+                                        @if (_availData.VitalSourcePrice.HasValue)
+                                        {
+                                            <div class="pricing-tier pricing-tier--digital">
+                                                <div class="pricing-tier__label">
+                                                    @(_availData.VitalSourcePriceDays switch
+                                                    {
+                                                        120 => "120-Day Rental",
+                                                        180 => "180-Day Rental",
+                                                        0   => "Lifetime Access",
+                                                        _   => "Digital"
+                                                    })
+                                                </div>
+                                                <div class="pricing-tier__price">
+                                                    $@_availData.VitalSourcePrice.Value.ToString("F2")
+                                                </div>
+                                                <div class="pricing-tier__type">VitalSource</div>
+                                            </div>
+                                        }
+                                    }
+
+                                    @* Google eBook *@
+                                    @if (_availData.EbookAvailableOnGoogle && _availData.EbookPrice.HasValue)
+                                    {
+                                        <div class="pricing-tier pricing-tier--ebook">
+                                            <div class="pricing-tier__label">eBook</div>
+                                            <div class="pricing-tier__price">
+                                                $@_availData.EbookPrice.Value.ToString("F2")
+                                            </div>
+                                            <div class="pricing-tier__type">Google Books</div>
+                                        </div>
+                                    }
+                                </div>
+
+                                @* Rental Period Guide *@
+                                <div class="rental-guide">
+                                    <div class="rental-guide__title">RENTAL PERIOD OPTIONS</div>
+                                    <div class="rental-guide__tiers">
+                                        <span class="rental-badge rental-badge--30">30 Days</span>
+                                        <span class="rental-badge rental-badge--60">60 Days</span>
+                                        <span class="rental-badge rental-badge--90">90 Days</span>
+                                        <span class="rental-badge rental-badge--120 @(_availData.VitalSourcePriceDays == 120 ? "rental-badge--active" : "")">
+                                            120 Days
+                                        </span>
+                                        <span class="rental-badge rental-badge--180 @(_availData.VitalSourcePriceDays == 180 ? "rental-badge--active" : "")">
+                                            180 Days
+                                        </span>
+                                        <span class="rental-badge rental-badge--lifetime @(_availData.VitalSourcePriceDays == 0 ? "rental-badge--active" : "")">
+                                            Lifetime
+                                        </span>
+                                    </div>
+                                </div>
+
+                                @* Affordability Score *@
+                                @if (_availData.AffordabilityScore.HasValue)
+                                {
+                                    <div class="affordability-bar" style="margin-top:12px;">
+                                        <div class="affordability-bar__label">AFFORDABILITY SCORE</div>
+                                        <div class="affordability-bar__track">
+                                            <div class="affordability-bar__fill"
+                                                 style="width: @(_availData.AffordabilityScore)%"></div>
+                                        </div>
+                                        <div class="affordability-bar__value">
+                                            @_availData.AffordabilityScore / 100
+                                        </div>
+                                    </div>
+                                }
+
+                                @* External Links *@
+                                <div class="external-links">
+                                    @if (_availData.DigitalAvailableOnVitalSource)
+                                    {
+                                        <a href="@_availData.VitalSourceUrl" target="_blank"
+                                           class="btn-verba btn-verba--primary">
+                                            VIEW ON VITALSOURCE
+                                        </a>
+                                    }
+                                    <a href="@_availData.AmazonUrl" target="_blank"
+                                       class="btn-verba">
+                                        VIEW ON AMAZON
+                                    </a>
+                                    @if (!string.IsNullOrEmpty(_availData.GoogleBuyLink))
+                                    {
+                                        <a href="@_availData.GoogleBuyLink" target="_blank"
+                                           class="btn-verba">
+                                            VIEW ON GOOGLE BOOKS
+                                        </a>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        @* ── Add to Adoption Button ─────────────────────── *@
+                        <div style="margin-top:12px;">
+                            <button class="btn-verba btn-verba--green"
+                                    @onclick="AddIsbnResultToAdoption">
+                                ADD TO ADOPTION
+                            </button>
+                        </div>
+                    </div>
+                }
+
+                @* ── Title/Author Search Results ───────────────────────── *@
+                @if (_titleResults.Count > 0)
+                {
+                    <div style="margin-top:16px;">
+                        <div class="pricing-section__title">SEARCH RESULTS (@_titleResults.Count)</div>
+                        @foreach (var book in _titleResults)
+                        {
+                            <div class="title-result-row">
+                                <div class="title-result-row__info">
+                                    <div class="title-result-row__title">@book.Title</div>
+                                    <div class="title-result-row__author">@book.Author</div>
+                                    <div class="title-result-row__meta">
+                                        @if (!string.IsNullOrEmpty(book.Isbn))
+                                        {
+                                            <span>ISBN: @book.Isbn</span>
+                                        }
+                                        @if (!string.IsNullOrEmpty(book.Publisher))
+                                        {
+                                            <span>Publisher: @book.Publisher</span>
+                                        }
+                                        @if (book.Year.HasValue)
+                                        {
+                                            <span>@book.Year</span>
+                                        }
+                                    </div>
+                                </div>
+                                <button class="btn-verba btn-verba--primary"
+                                        @onclick="() => LookupFromResult(book.Isbn)">
+                                    VIEW DETAILS
+                                </button>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+        else if (_activeTab == "messages")
+        {
+            <div class="tab-panel">
+                <p class="text-muted">No messages or activity yet.</p>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public string CourseId { get; set; } = "";
+
+    private VerbaCourse? _course;
+    private string? _nextCourseId;
+    private int _activeSection;
+    private string _activeTab = "selected";
+
+    // Copy adoption state
+    private string _copyTerm = "FALL 2025";
+    private string _copyCourse = "";
+    private string _copyInstructor = "";
+    private List<Material> _copyMaterials = new();
+
+    // Add materials state
+    private string _addSearchTerm = "";
+    private bool _isSearching;
+    private string? _searchError;
+    private IsbnLookupResult? _isbnResult;
+    private BookAvailabilityItem? _availData;
+    private List<BookSearchResult> _titleResults = new();
+
+    // Detail actions dropdown
+    private bool _showDetailActions;
+    private string? _detailActionToast;
+
+    private Section ActiveSection => _course!.Sections[_activeSection];
+
+    protected override void OnParametersSet()
+    {
+        _course = CourseService.GetCourse(CourseId);
+        _nextCourseId = CourseService.GetNextCourseId(CourseId);
+        _activeSection = 0;
+        _activeTab = "selected";
+
+        // Pre-populate copy materials for demo
+        if (_course != null && _course.Sections.Any(s => s.Materials.Count > 0))
+        {
+            _copyMaterials = _course.Sections.First(s => s.Materials.Count > 0).Materials;
+        }
+    }
+
+    private void SelectSection(int index)
+    {
+        _activeSection = index;
+    }
+
+    private void RemoveMaterial(Material material)
+    {
+        if (_course == null) return;
+        var section = ActiveSection;
+        CourseService.RemoveMaterial(_course.Id, section.Id, material.Isbn13);
+    }
+
+    private void ChangeMaterialStatus((Material material, MaterialStatus status) args)
+    {
+        if (_course == null) return;
+        var section = ActiveSection;
+        CourseService.UpdateMaterialStatus(_course.Id, section.Id, args.material.Isbn13, args.status);
+    }
+
+    private async Task HandleSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await DoSearch();
+    }
+
+    private async Task DoSearch()
+    {
+        var term = _addSearchTerm?.Trim();
+        if (string.IsNullOrWhiteSpace(term)) return;
+
+        _isSearching = true;
+        _searchError = null;
+        _isbnResult = null;
+        _availData = null;
+        _titleResults = new();
+        StateHasChanged();
+
+        try
+        {
+            // Detect if input looks like an ISBN (digits, possibly with dashes)
+            var cleaned = term.Replace("-", "").Replace(" ", "");
+            var looksLikeIsbn = cleaned.Length >= 10 && cleaned.All(char.IsDigit);
+
+            if (looksLikeIsbn)
+            {
+                // ISBN direct lookup
+                _isbnResult = await IsbnLookup.LookupAsync(cleaned);
+                if (_isbnResult != null)
+                {
+                    // Fetch full availability data (prices, VitalSource, Amazon)
+                    _availData = await AvailabilityService.CheckSingleIsbnAsync(cleaned);
+                }
+                else
+                {
+                    _searchError = $"No book found for ISBN {term}. Try searching by title instead.";
+                }
+            }
+            else
+            {
+                // Title/author search
+                _titleResults = await TitleSearch.SearchAsync(term);
+                if (_titleResults.Count == 0)
+                    _searchError = $"No results found for \"{term}\".";
+            }
+        }
+        catch (Exception ex)
+        {
+            _searchError = $"Search failed: {ex.Message}";
+        }
+        finally
+        {
+            _isSearching = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LookupFromResult(string isbn)
+    {
+        if (string.IsNullOrWhiteSpace(isbn)) return;
+        _addSearchTerm = isbn;
+        _titleResults = new();
+        await DoSearch();
+    }
+
+    private void AddIsbnResultToAdoption()
+    {
+        if (_isbnResult == null || _course == null) return;
+        var section = ActiveSection;
+        var material = new Material
+        {
+            Title = _isbnResult.Title,
+            Author = _isbnResult.Author,
+            Isbn13 = _isbnResult.Isbn.Length == 13 ? _isbnResult.Isbn : "",
+            Isbn10 = _isbnResult.Isbn.Length == 10 ? _isbnResult.Isbn : "",
+            Publisher = _isbnResult.Publisher,
+            Edition = _isbnResult.Edition,
+            IsRequired = true,
+            HasDigitalMatch = _isbnResult.DigitalOnVitalSource,
+            HasIaPrice = _availData?.HasIaPrice ?? false,
+            Status = MaterialStatus.Required
+        };
+        CourseService.AddMaterial(_course.Id, section.Id, material);
+        _detailActionToast = $"Added '{_isbnResult.Title}' to {section.Id} — {section.InstructorName}";
+        _isbnResult = null;
+        _availData = null;
+        _addSearchTerm = "";
+    }
+
+    private void ToggleDetailActions() => _showDetailActions = !_showDetailActions;
+    private void CloseDetailActions() => _showDetailActions = false;
+    private void DoDetailAction(string action)
+    {
+        _showDetailActions = false;
+        _detailActionToast = $"{action} — {_course!.Name}";
+    }
+
+    private string GetStatusPillClass(AdoptionStatus status) => status switch
+    {
+        AdoptionStatus.Approved => "status-pill--approved",
+        AdoptionStatus.Submitted => "status-pill--submitted",
+        _ => "status-pill--incomplete"
+    };
+}

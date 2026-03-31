@@ -1,0 +1,218 @@
+@page "/dashboard/office-manager"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "OfficeManager")]
+@rendermode InteractiveServer
+@using CampusAdoptions.Data
+@using CampusAdoptions.Helpers
+@using Microsoft.EntityFrameworkCore
+@using System.Security.Claims
+
+@inject AppDbContext Db
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+
+<PageTitle>Office Manager Dashboard</PageTitle>
+
+<div class="d-flex justify-space-between align-center mb-4">
+    <div>
+        <MudText Typo="Typo.h5">
+            <MudIcon Icon="@Icons.Material.Filled.FactCheck" Class="mr-2" />
+            Office Manager Dashboard
+        </MudText>
+        <MudText Typo="Typo.body2" Color="Color.Dark">Review incoming requests and submit your own</MudText>
+    </div>
+    <MudButton Href="/requests/submit" Variant="Variant.Filled" Color="Color.Warning"
+               StartIcon="@Icons.Material.Filled.AddCircle" Size="Size.Large">
+        New Request
+    </MudButton>
+</div>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else
+{
+    <!-- Stats -->
+    <MudGrid Class="mb-4">
+        <MudItem xs="6" md="3">
+            <MudPaper Elevation="2" Class="pa-4 text-center">
+                <MudIcon Icon="@Icons.Material.Filled.HourglassTop" Color="Color.Warning" Style="font-size:2rem;" />
+                <MudText Typo="Typo.h4" Class="mt-1" Style="font-weight:700;">@_pending.Count</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Dark">Awaiting Verification</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudPaper Elevation="2" Class="pa-4 text-center">
+                <MudIcon Icon="@Icons.Material.Filled.Verified" Color="Color.Info" Style="font-size:2rem;" />
+                <MudText Typo="Typo.h4" Class="mt-1" Style="font-weight:700;">@_all.Count(r => r.Status == RequestStatus.Verified)</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Dark">Verified</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudPaper Elevation="2" Class="pa-4 text-center">
+                <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Style="font-size:2rem;" />
+                <MudText Typo="Typo.h4" Class="mt-1" Style="font-weight:700;">@_all.Count(r => r.Status == RequestStatus.Approved)</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Dark">Approved</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudPaper Elevation="2" Class="pa-4 text-center">
+                <MudIcon Icon="@Icons.Material.Filled.ListAlt" Color="Color.Primary" Style="font-size:2rem;" />
+                <MudText Typo="Typo.h4" Class="mt-1" Style="font-weight:700;">@_all.Count</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Dark">Total Requests</MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <!-- Pending Verification -->
+    <MudPaper Elevation="2" Class="mb-4">
+        <MudToolBar Dense="true" Style="background:#f5f5f5;">
+            <MudIcon Icon="@Icons.Material.Filled.HourglassTop" Class="mr-2" />
+            <MudText Typo="Typo.subtitle1" Style="font-weight:600;">Requests Awaiting Verification</MudText>
+            <MudChip T="string" Color="Color.Warning" Size="Size.Small" Class="ml-2">@_pending.Count</MudChip>
+        </MudToolBar>
+        @if (!_pending.Any())
+        {
+            <div class="pa-6 text-center">
+                <MudIcon Icon="@Icons.Material.Filled.DoneAll" Color="Color.Success" Style="font-size:2.5rem;" />
+                <MudText Typo="Typo.body1" Class="mt-2" Color="Color.Dark">All caught up — no pending requests.</MudText>
+            </div>
+        }
+        else
+        {
+            <MudTable Items="_pending" Hover="true" Dense="true">
+                <HeaderContent>
+                    <MudTh>#</MudTh>
+                    <MudTh>Course</MudTh>
+                    <MudTh>Submitted By</MudTh>
+                    <MudTh>Semester</MudTh>
+                    <MudTh>Items</MudTh>
+                    <MudTh>Date</MudTh>
+                    <MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.Id</MudTd>
+                    <MudTd><strong>@context.CourseNumber</strong> — @context.CourseName</MudTd>
+                    <MudTd>@context.Submitter?.FullName</MudTd>
+                    <MudTd>@context.Semester</MudTd>
+                    <MudTd><MudChip T="string" Size="Size.Small" Color="Color.Default">@context.Items.Count</MudChip></MudTd>
+                    <MudTd Style="font-size:0.85rem; color:#888;">@context.SubmittedAt.ToString("MMM d, yyyy")</MudTd>
+                    <MudTd>
+                        <MudButton Href="@($"/requests/verify/{context.Id}")" Variant="Variant.Filled"
+                                   Color="Color.Primary" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.VerifiedUser">
+                            Verify
+                        </MudButton>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+
+    <!-- All Requests -->
+    <MudPaper Elevation="2">
+        <MudToolBar Dense="true" Style="background:#f5f5f5;">
+            <MudIcon Icon="@Icons.Material.Filled.Archive" Class="mr-2" />
+            <MudText Typo="Typo.subtitle1" Style="font-weight:600;">All Requests</MudText>
+        </MudToolBar>
+        <MudTable Items="_all" Hover="true" Dense="true">
+            <HeaderContent>
+                <MudTh>#</MudTh>
+                <MudTh>Course</MudTh>
+                <MudTh>Submitted By</MudTh>
+                <MudTh>Semester</MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh>Date</MudTh>
+                <MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.Id</MudTd>
+                <MudTd>
+                    <strong>@context.CourseNumber</strong><br />
+                    <MudText Typo="Typo.caption" Color="Color.Dark">@context.CourseName</MudText>
+                </MudTd>
+                <MudTd>@context.Submitter?.FullName</MudTd>
+                <MudTd>@context.Semester</MudTd>
+                <MudTd><StatusBadge Status="@context.Status.ToString()" /></MudTd>
+                <MudTd Style="font-size:0.85rem; color:#888;">@context.SubmittedAt.ToString("MMM d, yyyy")</MudTd>
+                <MudTd>
+                    <MudButtonGroup OverrideStyles="false">
+                        <MudButton Href="@($"/requests/details/{context.Id}")" Variant="Variant.Outlined"
+                                   Color="Color.Primary" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Visibility">
+                            View
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Delete"
+                                   OnClick="() => DeleteRequest(context.Id, context.CourseNumber)">
+                            Delete
+                        </MudButton>
+                    </MudButtonGroup>
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudPaper>
+}
+
+<MudMessageBox @ref="_deleteBox" Title="Delete Request" CancelText="Cancel">
+    <MessageContent>
+        <MudText>@_deleteMessage</MudText>
+    </MessageContent>
+    <YesButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.Delete">Delete</MudButton>
+    </YesButton>
+</MudMessageBox>
+
+@code {
+    private bool _loading = true;
+    private List<CourseRequest> _pending = [];
+    private List<CourseRequest> _all = [];
+    private int _currentUserId;
+    private MudMessageBox _deleteBox = default!;
+    private string _deleteMessage = "";
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is not null)
+        {
+            var state = await AuthState;
+            _currentUserId = int.Parse(state.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        }
+
+        _pending = await Db.CourseRequests
+            .Include(r => r.Submitter)
+            .Include(r => r.Items)
+            .Where(r => r.Status == RequestStatus.PendingVerification)
+            .OrderByDescending(r => r.SubmittedAt)
+            .ToListAsync();
+
+        _all = await Db.CourseRequests
+            .Include(r => r.Submitter)
+            .Include(r => r.Items)
+            .OrderByDescending(r => r.SubmittedAt)
+            .ToListAsync();
+
+        _loading = false;
+    }
+
+    private async Task DeleteRequest(int id, string courseNumber)
+    {
+        _deleteMessage = $"Delete course request #{id} ({courseNumber})? This cannot be undone.";
+        var confirmed = await _deleteBox.ShowAsync();
+
+        if (confirmed != true) return;
+
+        var req = await Db.CourseRequests.FindAsync(id);
+        if (req is not null)
+        {
+            Db.CourseRequests.Remove(req);
+            await Db.SaveChangesAsync();
+            _all.RemoveAll(r => r.Id == id);
+            _pending.RemoveAll(r => r.Id == id);
+            Snackbar.Add($"Request #{id} deleted.", Severity.Success);
+        }
+    }
+}

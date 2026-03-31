@@ -1,0 +1,22 @@
+@* Shared status badge component — will be expanded in later steps *@
+
+<MudChip T="string"
+         Color="@GetColor()"
+         Size="Size.Small"
+         Style="font-weight:600; letter-spacing:0.5px;">
+    @Status
+</MudChip>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Status { get; set; } = "";
+
+    private Color GetColor() => Status?.ToLower() switch
+    {
+        "pendingverification" or "pending" => Color.Warning,
+        "verified" => Color.Info,
+        "approved" => Color.Success,
+        "rejected" => Color.Error,
+        _ => Color.Default
+    };
+}
