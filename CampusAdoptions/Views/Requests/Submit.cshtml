@@ -1,0 +1,707 @@
+@model CampusAdoptions.ViewModels.SubmitRequestViewModel
+@{ ViewData["Title"] = "New Course Request"; }
+
+<div class="page-header">
+  <h2><i class="bi bi-plus-circle me-2"></i>New Course Request</h2>
+  <p class="mb-0 opacity-75">
+    Type an ISBN — all book details are filled in automatically.
+    Previously used ISBNs are reused instantly from the catalog.
+  </p>
+</div>
+
+<form asp-action="Submit" method="post" id="submitForm">
+  @Html.AntiForgeryToken()
+  <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+
+  <!-- Course Info -->
+  <div class="card mb-4">
+    <div class="card-header card-header-byui"><i class="bi bi-mortarboard me-2"></i>Course Information</div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-5">
+          <label asp-for="CourseName" class="form-label fw-semibold">Course Name</label>
+          <input asp-for="CourseName" class="form-control" placeholder="e.g. Programming with Classes" />
+          <span asp-validation-for="CourseName" class="text-danger small"></span>
+        </div>
+        <div class="col-md-3">
+          <label asp-for="CourseNumber" class="form-label fw-semibold">Course Number</label>
+          <input asp-for="CourseNumber" class="form-control" placeholder="e.g. CSE 210" />
+          <span asp-validation-for="CourseNumber" class="text-danger small"></span>
+        </div>
+        <div class="col-md-2">
+          <label asp-for="Section" class="form-label fw-semibold">Section</label>
+          <input asp-for="Section" class="form-control" placeholder="01" />
+        </div>
+        <div class="col-md-2">
+          <label asp-for="Semester" class="form-label fw-semibold">Semester</label>
+          <select asp-for="Semester" class="form-select">
+            <option value="">-- Select --</option>
+            <option>Winter 2026</option>
+            <option>Spring 2026</option>
+            <option>Fall 2026</option>
+            <option>Winter 2027</option>
+          </select>
+          <span asp-validation-for="Semester" class="text-danger small"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Items -->
+  <div class="card mb-4">
+    <div class="card-header card-header-byui d-flex justify-content-between align-items-center">
+      <span><i class="bi bi-list-check me-2"></i>Books &amp; Supplies</span>
+      <div class="d-flex gap-2">
+        <button type="button" class="btn btn-gold btn-sm" onclick="addBook()">
+          <i class="bi bi-book me-1"></i>Add Book
+        </button>
+        <button type="button" class="btn btn-outline-light btn-sm" onclick="addSupply()">
+          <i class="bi bi-box-seam me-1"></i>Add Supply
+        </button>
+      </div>
+    </div>
+    <div class="card-body p-0">
+      <div id="itemsContainer"></div>
+      <div id="emptyMsg" class="text-center text-muted py-5">
+        <i class="bi bi-inbox fs-2"></i>
+        <p class="mt-2">No items yet — click <strong>Add Book</strong> or <strong>Add Supply</strong> above.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="d-flex gap-3">
+    <button type="submit" class="btn btn-byui btn-lg px-5">
+      <i class="bi bi-send me-2"></i>Submit Request
+    </button>
+    <a asp-controller="Dashboard" asp-action="Index" class="btn btn-outline-secondary btn-lg">Cancel</a>
+  </div>
+</form>
+
+<!-- Title/Author Search Modal -->
+<div class="modal fade" id="titleSearchModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header" style="background:#003B71;color:#fff;">
+        <h5 class="modal-title"><i class="bi bi-search me-2"></i>Search by Title / Author</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="input-group mb-3">
+          <input type="text" id="searchTitle" class="form-control form-control-lg" placeholder="Book title..." />
+          <input type="text" id="searchAuthor" class="form-control" placeholder="Author (optional)" />
+          <button class="btn btn-byui" onclick="doTitleSearch()"><i class="bi bi-search"></i></button>
+        </div>
+        <div id="titleSearchSpinner" class="text-center d-none py-3">
+          <div class="spinner-border text-primary"></div>
+          <p class="mt-2 text-muted">Searching Open Library…</p>
+        </div>
+        <div id="titleSearchError" class="alert alert-danger d-none"></div>
+        <div id="titleSearchResults"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+@section Scripts {
+<script>
+let itemCount = 0;
+let activeTitleSearchIdx = -1;
+
+// ═══════════════════════════════════════════════════════════
+//  ADD BOOK ROW
+// ═══════════════════════════════════════════════════════════
+function addBook() {
+  const idx = itemCount++;
+  document.getElementById('emptyMsg').style.display = 'none';
+
+  const div = document.createElement('div');
+  div.id = `item_${idx}`;
+  div.className = 'item-row border-bottom p-3';
+  div.innerHTML = `
+    <input type="hidden" name="Items[${idx}].ItemType" value="Book"/>
+
+    <div class="d-flex justify-content-between align-items-start mb-3">
+      <span class="badge bg-primary fs-6"><i class="bi bi-book me-1"></i>Book #${idx+1}</span>
+      <button type="button" class="btn btn-danger btn-sm px-3" onclick="removeItem('item_${idx}')">
+        <i class="bi bi-trash3 me-1"></i>REMOVE FROM LIST
+      </button>
+    </div>
+
+    <!-- ── ISBN-first lookup bar ── -->
+    <div class="isbn-lookup-bar p-3 mb-3 rounded" style="background:#f0fff0;border:1px solid #c3e6cb;">
+      <label class="form-label fw-bold text-success mb-1">
+        <i class="bi bi-upc-scan me-1"></i>Enter ISBN to auto-fill all fields
+        <span class="badge bg-success ms-1">Recommended</span>
+      </label>
+      <div class="input-group">
+        <span class="input-group-text bg-success text-white"><i class="bi bi-upc"></i></span>
+        <input type="text" id="isbnInput_${idx}" class="form-control form-control-lg font-monospace"
+               placeholder="e.g. 9780134190440 or 0134190440"
+               oninput="clearConfirmation(${idx})"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();lookupByIsbn(${idx});}" />
+        <button type="button" class="btn btn-success btn-lg" onclick="lookupByIsbn(${idx})">
+          <i class="bi bi-search me-1"></i>Look Up ISBN
+        </button>
+        <button type="button" class="btn btn-outline-secondary btn-lg" title="Search by title instead"
+                onclick="openTitleSearch(${idx})">
+          <i class="bi bi-fonts me-1"></i>By Title
+        </button>
+      </div>
+      <div id="isbnSpinner_${idx}" class="d-none mt-2">
+        <div class="d-flex align-items-center gap-2 text-muted">
+          <div class="spinner-border spinner-border-sm text-success"></div>
+          <small>Looking up ISBN…</small>
+        </div>
+      </div>
+      <div id="isbnError_${idx}" class="alert alert-danger py-2 mt-2 d-none"></div>
+
+      <!-- Confirmation panel -->
+      <div id="confirmPanel_${idx}" class="d-none mt-3">
+        <div class="card border-success">
+          <div class="card-header bg-success text-white py-2">
+            <i class="bi bi-check-circle me-2"></i>Book Found — Please Confirm
+            <span id="cacheTag_${idx}" class="badge bg-warning text-dark ms-2 d-none">
+              <i class="bi bi-database me-1"></i>From Local Catalog
+            </span>
+          </div>
+          <div class="card-body py-2">
+            <div class="d-flex gap-3">
+              <!-- Cover thumbnail -->
+              <div style="width:120px;flex-shrink:0;">
+                <img id="conf_cover_img_${idx}" src="" alt="Cover"
+                     style="width:120px;height:160px;object-fit:cover;border-radius:4px;border:1px solid #ddd;display:none;box-shadow:0 2px 8px rgba(0,0,0,.15);" />
+                <div id="conf_cover_placeholder_${idx}"
+                     style="width:120px;height:160px;background:#e9ecef;border-radius:4px;border:1px solid #ddd;display:flex;align-items:center;justify-content:center;">
+                  <i class="bi bi-book text-muted" style="font-size:2.5rem;"></i>
+                </div>
+              </div>
+              <!-- Metadata -->
+              <div style="flex:1;">
+                <div class="d-flex align-items-start gap-2 mb-1 flex-wrap">
+                  <strong id="conf_title_${idx}" style="line-height:1.3;"></strong>
+                  <span id="conf_ebook_badge_${idx}" class="d-none"
+                        style="color:#2e7d32;font-size:12px;font-weight:700;letter-spacing:.03em;white-space:nowrap;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                         fill="none" stroke="#2e7d32" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
+                         style="vertical-align:-1px;margin-right:3px;">
+                      <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>DIGITAL MATCH
+                  </span>
+                </div>
+              <div class="row g-2">
+                  <div class="col-md-6">
+                    <small class="text-muted d-block">Author</small>
+                    <span id="conf_author_${idx}"></span>
+                  </div>
+                  <div class="col-md-6">
+                    <small class="text-muted d-block">ISBN</small>
+                    <code id="conf_isbn_${idx}" class="text-success fw-bold"></code>
+                  </div>
+                  <div class="col-md-5">
+                    <small class="text-muted d-block">Publisher</small>
+                    <span id="conf_publisher_${idx}"></span>
+                  </div>
+                  <div class="col-md-3">
+                    <small class="text-muted d-block">Edition</small>
+                    <span id="conf_edition_${idx}"></span>
+                  </div>
+                  <div class="col-md-4">
+                    <small class="text-muted d-block">Year</small>
+                    <span id="conf_year_${idx}"></span>
+                  </div>
+                  <!-- Digital match badge (shown when VitalSource confirms digital) -->
+                  <div class="col-12 d-none" id="conf_digital_wrap_${idx}">
+                    <div style="display:inline-flex;flex-wrap:wrap;gap:8px;align-items:center;">
+                      <!-- Badge 1: DIGITAL MATCH ✓ -->
+                      <div style="background:#e8f5e9;border:2px solid #43a047;border-radius:20px;
+                                  padding:5px 14px;display:inline-flex;align-items:center;gap:6px;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                             fill="none" stroke="#2e7d32" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                        <span style="font-size:12px;font-weight:800;color:#2e7d32;letter-spacing:.04em;">DIGITAL MATCH</span>
+                      </div>
+                      <!-- Badge 2: HAS IA PRICE ✓ (only when price available) -->
+                      <div id="conf_ia_price_wrap_${idx}" class="d-none"
+                           style="background:#e3f2fd;border:2px solid #1565c0;border-radius:20px;
+                                  padding:5px 14px;display:inline-flex;align-items:center;gap:6px;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                             fill="none" stroke="#1565c0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                        <span style="font-size:12px;font-weight:800;color:#1565c0;letter-spacing:.04em;">HAS IA PRICE</span>
+                        <span id="conf_vs_price_label_${idx}" style="font-size:11px;color:#555;">eTextbook License:</span>
+                        <strong id="conf_vs_price_${idx}" style="color:#1565c0;font-size:14px;"></strong>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="card-footer bg-light d-flex gap-2">
+            <button type="button" class="btn btn-success" onclick="confirmBook(${idx})">
+              <i class="bi bi-check-lg me-1"></i>Confirm &amp; Use This Book
+            </button>
+            <button type="button" class="btn btn-outline-secondary" onclick="clearConfirmation(${idx})">
+              <i class="bi bi-x me-1"></i>Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hidden book fields (filled after confirmation) -->
+    <div id="bookFields_${idx}" class="d-none">
+      <div class="alert alert-success py-2 mb-2 d-flex align-items-center flex-wrap gap-2">
+        <span>
+          <i class="bi bi-check-circle-fill me-2"></i>
+          <strong id="confirmed_title_display_${idx}"></strong>
+          — ISBN <code id="confirmed_isbn_display_${idx}" class="fw-bold"></code>
+        </span>
+        <span id="confirmed_digital_badge_${idx}" class="d-none"
+              style="display:inline-flex !important;align-items:center;background:#e8f5e9;border:1.5px solid #66bb6a;border-radius:20px;padding:2px 10px;font-size:12px;font-weight:700;color:#2e7d32;white-space:nowrap;gap:4px;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+               fill="none" stroke="#2e7d32" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          Digital Version Available
+        </span>
+        <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" onclick="resetBook(${idx})">
+          <i class="bi bi-arrow-counterclockwise me-1"></i>Change Book
+        </button>
+      </div>
+      <input type="hidden" name="Items[${idx}].Title"           id="h_title_${idx}" />
+      <input type="hidden" name="Items[${idx}].Author"          id="h_author_${idx}" />
+      <input type="hidden" name="Items[${idx}].Isbn"            id="h_isbn_${idx}" />
+      <input type="hidden" name="Items[${idx}].Publisher"       id="h_publisher_${idx}" />
+      <input type="hidden" name="Items[${idx}].Edition"         id="h_edition_${idx}" />
+      <input type="hidden" name="Items[${idx}].PublicationYear" id="h_year_${idx}" />
+    </div>
+
+    <!-- Common fields -->
+    <div class="row g-2 mt-1">
+      <div class="col-md-2">
+        <label class="form-label">Quantity</label>
+        <input type="number" name="Items[${idx}].Quantity" value="1" min="1" max="999" class="form-control" />
+      </div>
+      <div class="col-md-3 d-flex align-items-end pb-1">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="Items[${idx}].IsRequired"
+                 value="true" checked id="req_${idx}" />
+          <label class="form-check-label fw-semibold" for="req_${idx}">Required for course</label>
+        </div>
+      </div>
+      <div class="col-md-7">
+        <label class="form-label">Notes <span class="text-muted">(optional)</span></label>
+        <input type="text" name="Items[${idx}].Notes" class="form-control" placeholder="e.g. Any edition after 2020 acceptable" />
+      </div>
+    </div>`;
+
+  document.getElementById('itemsContainer').appendChild(div);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  ADD SUPPLY ROW
+// ═══════════════════════════════════════════════════════════
+function addSupply() {
+  const idx = itemCount++;
+  document.getElementById('emptyMsg').style.display = 'none';
+  const div = document.createElement('div');
+  div.id = `item_${idx}`;
+  div.className = 'item-row border-bottom p-3';
+  div.innerHTML = `
+    <input type="hidden" name="Items[${idx}].ItemType" value="Supply"/>
+    <div class="d-flex justify-content-between align-items-start mb-2">
+      <span class="badge bg-secondary fs-6"><i class="bi bi-box-seam me-1"></i>Supply #${idx+1}</span>
+      <button type="button" class="btn btn-outline-danger btn-sm" onclick="removeItem('item_${idx}')">
+        <i class="bi bi-trash"></i> Remove
+      </button>
+    </div>
+    <div class="row g-2">
+      <div class="col-md-6">
+        <label class="form-label fw-semibold">Supply Description</label>
+        <input type="text" name="Items[${idx}].SupplyDescription" class="form-control"
+               placeholder="e.g. Scientific calculator TI-84" />
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Quantity</label>
+        <input type="number" name="Items[${idx}].Quantity" value="1" min="1" class="form-control" />
+      </div>
+      <div class="col-md-2 d-flex align-items-end pb-1">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="Items[${idx}].IsRequired"
+                 value="true" checked id="req_${idx}" />
+          <label class="form-check-label" for="req_${idx}">Required</label>
+        </div>
+      </div>
+      <div class="col-12">
+        <label class="form-label">Notes</label>
+        <input type="text" name="Items[${idx}].Notes" class="form-control" placeholder="Optional notes" />
+      </div>
+    </div>`;
+  document.getElementById('itemsContainer').appendChild(div);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  ISBN DIRECT LOOKUP
+// ═══════════════════════════════════════════════════════════
+async function lookupByIsbn(idx) {
+  const isbnRaw = (document.getElementById(`isbnInput_${idx}`)?.value || '').trim();
+  const isbn = isbnRaw.replace(/[-\s]/g, '');
+  if (!isbn) { showIsbnError(idx, 'Please enter an ISBN number.'); return; }
+
+  clearConfirmation(idx);
+  document.getElementById(`isbnSpinner_${idx}`).classList.remove('d-none');
+  document.getElementById(`isbnError_${idx}`).classList.add('d-none');
+
+  try {
+    const res = await fetch(`/api/isbn-direct?isbn=${encodeURIComponent(isbn)}`);
+    document.getElementById(`isbnSpinner_${idx}`).classList.add('d-none');
+
+    if (res.status === 404) {
+      showManualEntry(idx, isbn);
+      return;
+    }
+    if (!res.ok) {
+      showIsbnError(idx, 'Lookup failed. Please try again.');
+      return;
+    }
+
+    // /api/isbn-direct now includes vitalSourcePrice + vitalSourceUrl directly
+    showConfirmation(idx, await res.json());
+  } catch(e) {
+    document.getElementById(`isbnSpinner_${idx}`).classList.add('d-none');
+    showIsbnError(idx, 'Network error. Please check your connection.');
+  }
+}
+
+function showIsbnError(idx, msg) {
+  const el = document.getElementById(`isbnError_${idx}`);
+  if (el) { el.textContent = msg; el.classList.remove('d-none'); }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  MANUAL ENTRY FALLBACK
+// ═══════════════════════════════════════════════════════════
+function showManualEntry(idx, isbn) {
+  document.getElementById(`manualPanel_${idx}`)?.remove();
+  const bar = document.querySelector(`#item_${idx} .isbn-lookup-bar`);
+  if (!bar) return;
+
+  const panel = document.createElement('div');
+  panel.id = `manualPanel_${idx}`;
+  panel.className = 'mt-3';
+  panel.innerHTML = `
+    <div class="card border-warning">
+      <div class="card-header bg-warning text-dark py-2">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        ISBN <code>${escHtml(isbn)}</code> not found in online catalogs
+        <small class="ms-2">(VitalSource / custom print ISBNs may not be indexed publicly)</small>
+      </div>
+      <div class="card-body">
+        <p class="text-muted small mb-3">
+          Please enter the book details manually. The ISBN will be saved — next time this book is
+          requested it will be found instantly from our local catalog.
+        </p>
+        <div class="row g-2">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Title <span class="text-danger">*</span></label>
+            <input type="text" id="m_title_${idx}" class="form-control" placeholder="Book title" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Author(s)</label>
+            <input type="text" id="m_author_${idx}" class="form-control" placeholder="Author name(s)" />
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Publisher</label>
+            <input type="text" id="m_publisher_${idx}" class="form-control" placeholder="Publisher" />
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">Edition</label>
+            <input type="text" id="m_edition_${idx}" class="form-control" placeholder="e.g. 3rd" />
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">Year</label>
+            <input type="number" id="m_year_${idx}" class="form-control" placeholder="2024" min="1900" max="2099" />
+          </div>
+        </div>
+      </div>
+      <div class="card-footer bg-light d-flex gap-2">
+        <button type="button" class="btn btn-warning fw-bold" onclick="confirmManualEntry(${idx}, '${isbn.replace(/'/g,"\\'")}')">
+          <i class="bi bi-check-lg me-1"></i>Use These Details
+        </button>
+        <button type="button" class="btn btn-outline-secondary" onclick="cancelManualEntry(${idx})">
+          <i class="bi bi-x me-1"></i>Cancel
+        </button>
+      </div>
+    </div>`;
+  bar.appendChild(panel);
+}
+
+function confirmManualEntry(idx, isbn) {
+  const title = (document.getElementById(`m_title_${idx}`)?.value || '').trim();
+  if (!title) { alert('Please enter a book title.'); return; }
+  const book = {
+    isbn, title,
+    author:    document.getElementById(`m_author_${idx}`)?.value    || '',
+    publisher: document.getElementById(`m_publisher_${idx}`)?.value || '',
+    edition:   document.getElementById(`m_edition_${idx}`)?.value   || '',
+    year:      parseInt(document.getElementById(`m_year_${idx}`)?.value || '') || null,
+    fromLocalCache: false, source: 'Manual'
+  };
+  showConfirmation(idx, book);
+  document.getElementById(`manualPanel_${idx}`)?.remove();
+}
+
+function cancelManualEntry(idx) {
+  document.getElementById(`manualPanel_${idx}`)?.remove();
+  const inp = document.getElementById(`isbnInput_${idx}`);
+  if (inp) inp.value = '';
+}
+
+// ═══════════════════════════════════════════════════════════
+//  SHOW / CONFIRM / CLEAR CONFIRMATION PANEL
+// ═══════════════════════════════════════════════════════════
+function showConfirmation(idx, book) {
+  setText(`conf_title_${idx}`,     book.title     || '(no title)');
+  setText(`conf_author_${idx}`,    book.author    || '—');
+  setText(`conf_isbn_${idx}`,      book.isbn      || '—');
+  setText(`conf_publisher_${idx}`, book.publisher || '—');
+  setText(`conf_edition_${idx}`,   book.edition   || '—');
+  setText(`conf_year_${idx}`,      book.year ? String(book.year) : '—');
+
+  // Local catalog tag
+  const cacheTag = document.getElementById(`cacheTag_${idx}`);
+  if (cacheTag) cacheTag.classList.toggle('d-none', !book.fromLocalCache);
+
+  // Cover image
+  const coverImg  = document.getElementById(`conf_cover_img_${idx}`);
+  const coverPh   = document.getElementById(`conf_cover_placeholder_${idx}`);
+  const coverUrl  = book.coverThumbnail || '';
+  if (coverImg && coverPh) {
+    if (coverUrl) {
+      coverImg.src = coverUrl;
+      coverImg.style.display = '';
+      coverPh.style.display  = 'none';
+    } else {
+      coverImg.style.display = 'none';
+      coverPh.style.display  = 'flex';
+    }
+  }
+
+  // ── VitalSource hit = 100% digital (business rule):
+  // Accept camelCase (API default), PascalCase (fallback), source flag, or URL presence.
+  const hasDigital = !!(book.digitalOnVitalSource || book.DigitalOnVitalSource ||
+                        book.source === 'VitalSource' ||
+                        book.vitalSourceUrl || book.VitalSourceUrl);
+
+  // ── eBook title badge (inline next to title) ──
+  const ebookBadge = document.getElementById(`conf_ebook_badge_${idx}`);
+  if (ebookBadge) ebookBadge.classList.toggle('d-none', !hasDigital);
+
+  // ── DIGITAL MATCH + HAS IA PRICE badges row ──
+  const digitalWrap  = document.getElementById(`conf_digital_wrap_${idx}`);
+  const iaPriceWrap  = document.getElementById(`conf_ia_price_wrap_${idx}`);
+  const vsPriceEl    = document.getElementById(`conf_vs_price_${idx}`);
+
+  if (digitalWrap) {
+    if (hasDigital) {
+      digitalWrap.classList.remove('d-none');
+
+      // IA price badge — show label based on rental period
+      const rawPrice = book.vitalSourcePrice ?? book.vitalsourcePrice ?? null;
+      if (iaPriceWrap && vsPriceEl && rawPrice != null && Number(rawPrice) > 0) {
+        const days = book.vitalSourcePriceDays;
+        const priceLabel = days === 0   ? 'Lifetime license:'
+                         : days === 180 ? '180-day rental:'
+                         : days === 120 ? '120-day rental:'
+                         :                'eTextbook License:';
+        setText(`conf_vs_price_label_${idx}`, priceLabel);
+        setText(`conf_vs_price_${idx}`, `$${Number(rawPrice).toFixed(2)}`);
+        iaPriceWrap.classList.remove('d-none');
+        iaPriceWrap.style.display = 'inline-flex';
+      } else if (iaPriceWrap) {
+        iaPriceWrap.classList.add('d-none');
+        iaPriceWrap.style.display = 'none';
+      }
+    } else {
+      digitalWrap.classList.add('d-none');
+      if (iaPriceWrap) { iaPriceWrap.classList.add('d-none'); iaPriceWrap.style.display = 'none'; }
+    }
+  }
+
+  // Store book data and show panel
+  const panel = document.getElementById(`confirmPanel_${idx}`);
+  if (panel) {
+    panel._bookData = book;
+    panel.classList.remove('d-none');
+  }
+}
+
+function confirmBook(idx) {
+  const panel = document.getElementById(`confirmPanel_${idx}`);
+  const book  = panel?._bookData;
+  if (!book) return;
+
+  setVal(`h_title_${idx}`,     book.title     || '');
+  setVal(`h_author_${idx}`,    book.author    || '');
+  setVal(`h_isbn_${idx}`,      book.isbn      || '');
+  setVal(`h_publisher_${idx}`, book.publisher || '');
+  setVal(`h_edition_${idx}`,   book.edition   || '');
+  setVal(`h_year_${idx}`,      book.year ? String(book.year) : '');
+
+  setText(`confirmed_title_display_${idx}`, book.title || '');
+  setText(`confirmed_isbn_display_${idx}`,  book.isbn  || '');
+
+  // VitalSource hit = 100% digital — same robust check as showConfirmation
+  const confirmed_hasDigital = !!(book.digitalOnVitalSource || book.DigitalOnVitalSource ||
+                                   book.source === 'VitalSource' ||
+                                   book.vitalSourceUrl || book.VitalSourceUrl);
+  const digitalBadge = document.getElementById(`confirmed_digital_badge_${idx}`);
+  if (digitalBadge) {
+    if (confirmed_hasDigital) {
+      digitalBadge.classList.remove('d-none');
+      digitalBadge.style.display = 'inline-flex';
+    } else {
+      digitalBadge.classList.add('d-none');
+      digitalBadge.style.display = 'none';
+    }
+  }
+
+  panel.classList.add('d-none');
+  document.querySelector(`#item_${idx} .isbn-lookup-bar`).style.display = 'none';
+  document.getElementById(`bookFields_${idx}`).classList.remove('d-none');
+}
+
+function clearConfirmation(idx) {
+  const panel = document.getElementById(`confirmPanel_${idx}`);
+  if (panel) { panel.classList.add('d-none'); panel._bookData = null; }
+  const err = document.getElementById(`isbnError_${idx}`);
+  if (err) err.classList.add('d-none');
+}
+
+function resetBook(idx) {
+  const bar = document.querySelector(`#item_${idx} .isbn-lookup-bar`);
+  if (bar) bar.style.display = '';
+  document.getElementById(`bookFields_${idx}`)?.classList.add('d-none');
+  clearConfirmation(idx);
+  ['h_title_','h_author_','h_isbn_','h_publisher_','h_edition_','h_year_']
+    .forEach(p => setVal(p + idx, ''));
+  const inp = document.getElementById(`isbnInput_${idx}`);
+  if (inp) inp.value = '';
+  // Hide digital badge when resetting
+  const digitalBadge = document.getElementById(`confirmed_digital_badge_${idx}`);
+  if (digitalBadge) { digitalBadge.classList.add('d-none'); digitalBadge.style.display = 'none'; }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  TITLE SEARCH (alternative)
+// ═══════════════════════════════════════════════════════════
+function openTitleSearch(idx) {
+  activeTitleSearchIdx = idx;
+  document.getElementById('searchTitle').value  = '';
+  document.getElementById('searchAuthor').value = '';
+  document.getElementById('titleSearchResults').innerHTML = '';
+  document.getElementById('titleSearchError').classList.add('d-none');
+  new bootstrap.Modal(document.getElementById('titleSearchModal')).show();
+}
+
+async function doTitleSearch() {
+  const title  = document.getElementById('searchTitle').value.trim();
+  const author = document.getElementById('searchAuthor').value.trim();
+  if (!title) { alert('Please enter a book title.'); return; }
+
+  document.getElementById('titleSearchSpinner').classList.remove('d-none');
+  document.getElementById('titleSearchResults').innerHTML = '';
+  document.getElementById('titleSearchError').classList.add('d-none');
+
+  try {
+    const res  = await fetch(`/api/isbn-search?title=${encodeURIComponent(title)}&author=${encodeURIComponent(author)}`);
+    const data = await res.json();
+    document.getElementById('titleSearchSpinner').classList.add('d-none');
+
+    if (!data || data.length === 0) {
+      document.getElementById('titleSearchResults').innerHTML =
+        '<div class="text-muted text-center py-3"><i class="bi bi-exclamation-circle"></i> No results found.</div>';
+      return;
+    }
+
+    document.getElementById('titleSearchResults').innerHTML = data.map(b => `
+      <div class="result-card" onclick='selectFromTitleSearch(${JSON.stringify(b).replace(/'/g,"&#39;")})'>
+        <div class="d-flex justify-content-between">
+          <div>
+            <strong>${escHtml(b.title)}</strong><br/>
+            <small class="text-muted">${escHtml(b.author)}</small>
+          </div>
+          <div class="text-end">
+            ${b.isbn ? `<span class="isbn-pill">${escHtml(b.isbn)}</span>` : '<span class="badge bg-secondary">No ISBN</span>'}
+            ${b.year ? `<br/><small class="text-muted">${b.year}</small>` : ''}
+          </div>
+        </div>
+        ${b.publisher ? `<small class="text-muted"><i class="bi bi-building me-1"></i>${escHtml(b.publisher)}</small>` : ''}
+      </div>`).join('');
+  } catch(e) {
+    document.getElementById('titleSearchSpinner').classList.add('d-none');
+    document.getElementById('titleSearchError').textContent = 'Search failed.';
+    document.getElementById('titleSearchError').classList.remove('d-none');
+  }
+}
+
+function selectFromTitleSearch(book) {
+  const idx = activeTitleSearchIdx;
+  const isbnInput = document.getElementById(`isbnInput_${idx}`);
+  if (isbnInput && book.isbn) isbnInput.value = book.isbn;
+  showConfirmation(idx, { ...book, fromLocalCache: false });
+  bootstrap.Modal.getInstance(document.getElementById('titleSearchModal'))?.hide();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  UTILITIES
+// ═══════════════════════════════════════════════════════════
+function removeItem(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+
+  // Get a short label for the confirm message (title if confirmed, otherwise generic)
+  const titleEl = el.querySelector('[id^="confirmed_title_display_"]');
+  const label   = titleEl?.textContent?.trim();
+  const msg     = label
+    ? `Remove "${label}" from the list?`
+    : 'Remove this item from the list?';
+
+  if (!confirm(msg)) return;
+
+  el.remove();
+  reindexItems();   // keep name-indices contiguous so the model binder picks up all items
+  if (document.getElementById('itemsContainer').children.length === 0)
+    document.getElementById('emptyMsg').style.display = '';
+}
+
+/**
+ * After any add/remove, update the Items[N].Field name attributes on every
+ * remaining row so they are contiguous (0, 1, 2 …).
+ * Does NOT touch id= attributes — those are referenced by JS closures that
+ * captured the original index at creation time and still work correctly.
+ */
+function reindexItems() {
+  const rows = Array.from(
+    document.getElementById('itemsContainer').querySelectorAll('.item-row')
+  );
+  rows.forEach((row, newIdx) => {
+    row.querySelectorAll('[name]').forEach(el => {
+      el.name = el.name.replace(/^Items\[\d+\]\./, `Items[${newIdx}].`);
+    });
+  });
+}
+function setText(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
+function setVal(id, val)  { const el = document.getElementById(id); if (el) el.value = val; }
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+document.getElementById('searchTitle')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); doTitleSearch(); }
+});
+</script>
+}

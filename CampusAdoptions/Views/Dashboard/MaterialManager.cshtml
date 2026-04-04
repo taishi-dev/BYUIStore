@@ -1,0 +1,145 @@
+@model List<CampusAdoptions.Models.CourseRequest>
+@{ ViewData["Title"] = "Material Manager Dashboard"; }
+
+<div class="page-header">
+  <h2><i class="bi bi-clipboard2-check me-2"></i>Material Manager Dashboard</h2>
+  <p class="mb-0 opacity-75">Review verified course material requests and approve or reject them for the catalog.</p>
+</div>
+
+@if (TempData["Success"] is string ok)
+{
+  <div class="alert alert-success alert-dismissible fade show mt-3" role="alert">
+    <i class="bi bi-check-circle me-2"></i>@ok
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  </div>
+}
+@if (TempData["Warning"] is string warn)
+{
+  <div class="alert alert-warning alert-dismissible fade show mt-3" role="alert">
+    <i class="bi bi-exclamation-triangle me-2"></i>@warn
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  </div>
+}
+
+<!-- ═══ Summary Cards ═══ -->
+<div class="row g-3 mb-4 mt-1">
+  <div class="col-12 col-md-4">
+    <div style="background:#1a1a2e;color:#fff;border-radius:8px;padding:24px 28px;text-align:center;position:relative;overflow:hidden;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:.9px;color:#aaa;text-transform:uppercase;margin-bottom:6px;">
+        <i class="bi bi-hourglass-split me-1"></i>Awaiting Approval
+      </div>
+      <div style="font-size:52px;font-weight:900;line-height:1;color:#f5a623;">
+        @ViewBag.CntAwaitingApproval
+      </div>
+      <div style="font-size:11px;color:#888;margin-top:4px;">Verified — ready to review</div>
+      <div style="position:absolute;bottom:-12px;right:-8px;font-size:80px;opacity:.06;line-height:1;">
+        <i class="bi bi-hourglass-split"></i>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-md-4">
+    <div style="background:#0d2318;color:#fff;border-radius:8px;padding:24px 28px;text-align:center;position:relative;overflow:hidden;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:.9px;color:#aaa;text-transform:uppercase;margin-bottom:6px;">
+        <i class="bi bi-check2-circle me-1"></i>Approved Today
+      </div>
+      <div style="font-size:52px;font-weight:900;line-height:1;color:#4caf50;">
+        @ViewBag.CntApprovedToday
+      </div>
+      <div style="font-size:11px;color:#888;margin-top:4px;">Since midnight UTC</div>
+      <div style="position:absolute;bottom:-12px;right:-8px;font-size:80px;opacity:.06;line-height:1;">
+        <i class="bi bi-check2-circle"></i>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-md-4">
+    <div style="background:#1f0d0d;color:#fff;border-radius:8px;padding:24px 28px;text-align:center;position:relative;overflow:hidden;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:.9px;color:#aaa;text-transform:uppercase;margin-bottom:6px;">
+        <i class="bi bi-x-circle me-1"></i>Rejected This Week
+      </div>
+      <div style="font-size:52px;font-weight:900;line-height:1;color:#ef5350;">
+        @ViewBag.CntRejectedThisWeek
+      </div>
+      <div style="font-size:11px;color:#888;margin-top:4px;">Since Sunday midnight UTC</div>
+      <div style="position:absolute;bottom:-12px;right:-8px;font-size:80px;opacity:.06;line-height:1;">
+        <i class="bi bi-x-circle"></i>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Approval Queue ═══ -->
+<div class="card shadow-sm">
+  <div class="card-header card-header-byui d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-list-check me-2"></i>Approval Queue — Verified Requests</span>
+    <small class="opacity-75">Oldest first (most urgent at top)</small>
+  </div>
+
+  @if (!Model.Any())
+  {
+    <div class="card-body text-center py-5">
+      <i class="bi bi-check2-all" style="font-size:3rem;color:#4caf50;"></i>
+      <p class="mt-3 mb-0 text-muted fs-5">All clear — no requests awaiting approval.</p>
+      <p class="text-muted small">Requests will appear here once an Office Manager verifies them.</p>
+    </div>
+  }
+  else
+  {
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Course</th>
+            <th>Section</th>
+            <th>Semester</th>
+            <th>Submitted By</th>
+            <th>Verified</th>
+            <th class="text-center">Items</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @foreach (var req in Model)
+          {
+            <tr>
+              <td>
+                <div class="fw-semibold">@req.CourseNumber</div>
+                <small class="text-muted">@req.CourseName</small>
+              </td>
+              <td>
+                <span class="badge bg-secondary">§@req.Section</span>
+              </td>
+              <td>
+                <span class="text-muted small">@req.Semester</span>
+              </td>
+              <td>
+                <div class="small">@req.Submitter?.FullName</div>
+                <small class="text-muted">@req.Submitter?.Department</small>
+              </td>
+              <td>
+                @if (req.VerifiedAt.HasValue)
+                {
+                  <div class="small">@req.VerifiedAt.Value.ToLocalTime().ToString("MMM d, yyyy")</div>
+                  <small class="text-muted">by @req.VerifiedBy?.FullName</small>
+                }
+              </td>
+              <td class="text-center">
+                <span class="badge bg-info text-dark">@req.Items.Count</span>
+              </td>
+              <td class="text-end">
+                <a asp-controller="Requests" asp-action="Approve" asp-route-id="@req.Id"
+                   class="btn btn-sm btn-byui">
+                  Review &amp; Approve <i class="bi bi-arrow-right ms-1"></i>
+                </a>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <div class="card-footer text-muted small">
+      <i class="bi bi-info-circle me-1"></i>
+      @Model.Count request@(Model.Count == 1 ? "" : "s") waiting for final approval.
+      Clicking "Review &amp; Approve" opens the full book checklist with approve/reject controls.
+    </div>
+  }
+</div>

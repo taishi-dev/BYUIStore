@@ -1,0 +1,354 @@
+@using CampusAdoptions.Models
+@{
+    ViewData["Title"]     = "Courses";
+    ViewData["PageTitle"] = "COURSES";
+    var verified  = ViewBag.VerifiedRequests as List<CourseRequest> ?? new();
+    var all       = ViewBag.AllRequests      as List<CourseRequest> ?? new();
+    var pending   = all.Where(r => r.Status == RequestStatus.PendingVerification).ToList();
+    var approved  = all.Where(r => r.Status == RequestStatus.Approved).ToList();
+    var activeFilter = Context.Request.Query["filter"].ToString() is { Length: > 0 } f ? f : "all";
+    var searchTerm   = Context.Request.Query["search"].ToString();
+
+    var displayed = activeFilter switch {
+        "approve"  => verified,
+        "pending"  => pending,
+        "approved" => approved,
+        _          => all
+    };
+    if (!string.IsNullOrWhiteSpace(searchTerm))
+        displayed = displayed.Where(r =>
+            r.CourseNumber.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+            r.CourseName.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    // Bar heights relative to max value
+    int maxVal = Math.Max(1, new[] { pending.Count, all.Count, verified.Count, approved.Count }.Max());
+    double hInc = Math.Max((double)pending.Count  / maxVal * 80, 4);
+    double hSub = Math.Max((double)all.Count      / maxVal * 80, 4);
+    double hRev = Math.Max((double)verified.Count / maxVal * 80, 4);
+    double hApp = Math.Max((double)approved.Count / maxVal * 80, 4);
+}
+
+<!-- ═══ Status Chart ═══ -->
+<div class="verba-chart-wrapper">
+
+  <!-- Bar chart (collapsible) -->
+  <div class="verba-chart-section" id="chartBars">
+    <a class="chart-bar-col @(activeFilter=="pending"  ? "chart-col-active" : "")" href="?filter=pending">
+      <div class="chart-bar-fill @(activeFilter=="pending"  ? "active" : "")" style="height:@(hInc.ToString("F0"))px"></div>
+    </a>
+    <a class="chart-bar-col @(activeFilter=="all"      ? "chart-col-active" : "")" href="?filter=all">
+      <div class="chart-bar-fill @(activeFilter=="all"      ? "active" : "")" style="height:@(hSub.ToString("F0"))px"></div>
+    </a>
+    <a class="chart-bar-col @(activeFilter=="approve"  ? "chart-col-active" : "")" href="?filter=approve">
+      <div class="chart-bar-fill @(activeFilter=="approve"  ? "active" : "")" style="height:@(hRev.ToString("F0"))px"></div>
+    </a>
+    <a class="chart-bar-col @(activeFilter=="approved" ? "chart-col-active" : "")" href="?filter=approved">
+      <div class="chart-bar-fill @(activeFilter=="approved" ? "active" : "")" style="height:@(hApp.ToString("F0"))px"></div>
+    </a>
+  </div>
+
+  <!-- Collapse toggle -->
+  <div class="chart-collapse-toggle" onclick="toggleChart()" id="chartToggleRow">
+    <span class="chart-toggle-icon" id="chartToggleIcon">−</span>
+    <span>CLICK CHART TO EXPAND OR CONTRACT</span>
+  </div>
+
+  <!-- Stats row (always visible) -->
+  <div class="chart-stats-row">
+    <a class="chart-stat-col @(activeFilter=="pending"  ? "active" : "")" href="?filter=pending">
+      <span class="chart-stat-count @(activeFilter=="pending"  ? "active" : "")">@pending.Count</span>
+      <span class="chart-stat-name">INCOMPLETE</span>
+    </a>
+    <a class="chart-stat-col @(activeFilter=="all"      ? "active" : "")" href="?filter=all">
+      <span class="chart-stat-count @(activeFilter=="all"      ? "active" : "")">@all.Count</span>
+      <span class="chart-stat-name">SUBMITTED</span>
+    </a>
+    <a class="chart-stat-col @(activeFilter=="approve"  ? "active" : "")" href="?filter=approve">
+      <span class="chart-stat-count @(activeFilter=="approve"  ? "active" : "")">@verified.Count</span>
+      <span class="chart-stat-name">REVIEWED</span>
+    </a>
+    <a class="chart-stat-col @(activeFilter=="approved" ? "active" : "")" href="?filter=approved">
+      <span class="chart-stat-count @(activeFilter=="approved" ? "active" : "")">@approved.Count</span>
+      <span class="chart-stat-name">APPROVED</span>
+    </a>
+  </div>
+
+</div>
+
+<!-- ═══ Main Body: Sidebar + Course List ═══ -->
+<div class="verba-main-layout">
+
+  <!-- Left Sidebar -->
+  <aside class="verba-sidebar">
+    <div class="sidebar-filter-tabs">
+      <button class="sf-tab active">QUICK FILTERS</button>
+      <button class="sf-tab">ADVANCED</button>
+    </div>
+
+    <div class="sidebar-search-wrap">
+      <form method="get" action="">
+        <input type="hidden" name="filter" value="@activeFilter" />
+        <div class="sidebar-search-box">
+          <input class="sidebar-search-input" name="search" value="@searchTerm"
+                 placeholder="Search for a course..." />
+          <button class="sidebar-search-btn" type="submit"><i class="bi bi-search"></i></button>
+        </div>
+      </form>
+    </div>
+
+    <div class="sidebar-filter-group">
+      <label class="sidebar-filter-label">FILTER BY DEPARTMENT</label>
+      <select class="form-select form-select-sm sidebar-select">
+        <option>ALL DEPARTMENTS</option>
+        <option>Computer Science</option>
+        <option>Business</option>
+        <option>Mathematics</option>
+        <option>English</option>
+      </select>
+    </div>
+
+    <div class="sidebar-filter-group">
+      <label class="sidebar-filter-label">FILTER BY USER</label>
+      <select class="form-select form-select-sm sidebar-select">
+        <option>ALL USERS</option>
+        @foreach (var u in all.Select(r => r.Submitter?.FullName).Distinct())
+        {
+          <option>@u</option>
+        }
+      </select>
+    </div>
+
+    <nav class="sidebar-section-nav">
+      <a class="ssnav-link @(activeFilter=="all"     ? "active" : "")" href="?filter=all">ALL SECTIONS</a>
+      <a class="ssnav-link" href="#">SECTIONS TO EMAIL</a>
+      <a class="ssnav-link @(activeFilter=="approve" ? "active" : "")" href="?filter=approve">SECTIONS TO APPROVE</a>
+      <a class="ssnav-link" href="#">NEW SECTIONS TO PUSH</a>
+      <a class="ssnav-link" href="#">SECTIONS TO PRINT/EXPORT</a>
+      <a class="ssnav-link" href="#">AUTO ACCESS INTEREST</a>
+      <a class="ssnav-link" href="#">NO TEXT REQUIRED</a>
+      <a class="ssnav-link" href="#">SECTIONS WITH MESSAGES</a>
+    </nav>
+  </aside>
+
+  <!-- Course List -->
+  <section class="verba-course-list">
+
+    <!-- Toolbar -->
+    <div class="course-list-toolbar">
+      <span class="courses-count-label">VIEWING @displayed.Count COURSES</span>
+      <div class="dropdown">
+        <button class="btn btn-dark btn-sm dropdown-toggle course-actions-btn" type="button"
+                data-bs-toggle="dropdown">
+          COURSE ACTIONS
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li><a class="dropdown-item" href="#">Export Selected</a></li>
+          <li><a class="dropdown-item" href="#">Mark as Reviewed</a></li>
+          <li><a class="dropdown-item" asp-controller="Availability" asp-action="Index">Book Availability Report</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Rows -->
+    @if (!displayed.Any())
+    {
+      <div class="no-courses-msg">
+        <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+        No courses match the current filter.
+      </div>
+    }
+    else
+    {
+      @foreach (var req in displayed)
+      {
+        var isApproved  = req.Status == RequestStatus.Approved;
+        var isVerified  = req.Status == RequestStatus.Verified;
+        var hasSections = req.Items.Any();
+        var rowId       = $"sec-{req.Id}";
+        var expanderId  = $"exp-{req.Id}";
+
+        <div class="course-row-wrapper">
+
+          <!-- Main course row -->
+          <div class="course-row">
+
+            <!-- Expand / collapse button -->
+            <div class="course-row-expander" id="@expanderId">
+              @if (hasSections)
+              {
+                <span class="dot-menu">● ● ●</span>
+              }
+              else
+              {
+                <button class="expand-btn"
+                        onclick="toggleSections('@req.Id', this)"
+                        title="Expand sections">
+                  <i class="bi bi-plus-lg"></i>
+                </button>
+              }
+            </div>
+
+            <!-- Course info -->
+            <div class="course-row-info">
+              <a class="course-number" asp-controller="Requests" asp-action="Details" asp-route-id="@req.Id">
+                @req.CourseNumber
+              </a>
+              @if (req.Items.Any())
+              {
+                <span class="sections-count-badge">@req.Items.Count ITEM@(req.Items.Count != 1 ? "S" : "")</span>
+              }
+              else
+              {
+                <span class="sections-count-badge">@(string.IsNullOrEmpty(req.Semester) ? "—" : req.Semester)</span>
+              }
+              <div class="course-row-subtext">@req.Submitter?.FullName (@(req.Section ?? "01"))</div>
+            </div>
+
+            <!-- Status badges -->
+            <div class="course-row-badges">
+              @if (isApproved)
+              {
+                <span class="badge-exported">CURRENT SINCE EXPORTED</span>
+              }
+              else if (isVerified)
+              {
+                <span class="badge-reviewed">REVIEWED</span>
+              }
+              else
+              {
+                <span class="badge-not-exported">NOT YET EXPORTED</span>
+              }
+              <span class="badge-not-pushed">NOT YET PUSHED</span>
+            </div>
+
+            <!-- Actions dropdown -->
+            <div class="course-row-actions">
+              <div class="dropdown">
+                <button class="btn btn-sm btn-outline-secondary dropdown-toggle actions-dropdown-btn"
+                        type="button" data-bs-toggle="dropdown">
+                  ACTIONS
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                  <li>
+                    <a class="dropdown-item" asp-controller="Requests" asp-action="Details"
+                       asp-route-id="@req.Id">
+                      <i class="bi bi-eye me-2"></i>View Details
+                    </a>
+                  </li>
+                  @if (req.Status == RequestStatus.PendingVerification)
+                  {
+                    <li>
+                      <a class="dropdown-item" asp-controller="Requests" asp-action="Verify"
+                         asp-route-id="@req.Id">
+                        <i class="bi bi-shield-check me-2"></i>Verify
+                      </a>
+                    </li>
+                  }
+                  @if (isVerified)
+                  {
+                    <li>
+                      <a class="dropdown-item text-success" asp-controller="Requests" asp-action="Approve"
+                         asp-route-id="@req.Id">
+                        <i class="bi bi-check-circle me-2"></i>Approve
+                      </a>
+                    </li>
+                  }
+                  <li><hr class="dropdown-divider"></li>
+                  <li>
+                    <form method="post" asp-controller="Requests" asp-action="DeleteRequest"
+                          asp-route-id="@req.Id" style="margin:0;"
+                          onsubmit="return confirm('Delete course request #@req.Id (@req.CourseNumber — @req.Semester)?\nThis cannot be undone.')">
+                      @Html.AntiForgeryToken()
+                      <button type="submit" class="dropdown-item text-danger">
+                        <i class="bi bi-trash me-2"></i>Delete Course
+                      </button>
+                    </form>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+          </div><!-- /course-row -->
+
+          <!-- Inline sections block (shown when expanded) -->
+          <div class="course-sections-block" id="@rowId">
+            <div class="course-section-row">
+              <div class="section-dots">● ● ●</div>
+              <div class="section-info-text">
+                @req.Submitter?.FullName?.ToUpper() (@(req.Section ?? "01"))
+              </div>
+              <div class="course-row-badges">
+                @if (isApproved)
+                {
+                  <span class="badge-exported">CURRENT SINCE EXPORTED</span>
+                }
+                else if (isVerified)
+                {
+                  <span class="badge-reviewed">REVIEWED</span>
+                }
+                else
+                {
+                  <span class="badge-not-exported">NOT YET EXPORTED</span>
+                }
+                <span class="badge-not-pushed">NOT YET PUSHED</span>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /course-row-wrapper -->
+      }
+    }
+
+    <!-- Pagination -->
+    <nav class="verba-pagination">
+      <span class="page-btn disabled">‹ PREV</span>
+      <span class="page-btn active">1</span>
+      <span class="page-btn">2</span>
+      <span class="page-btn">3</span>
+      <span class="page-ellipsis">…</span>
+      <span class="page-btn">›› NEXT</span>
+      <span class="page-jump-label ms-4">JUMP TO PAGE</span>
+      <input class="page-jump-input" type="number" value="1" min="1" />
+      <button class="page-jump-go">GO</button>
+    </nav>
+
+  </section>
+</div>
+
+@section Scripts {
+<script>
+// ── Chart collapse / expand ──────────────────────────────────
+var chartExpanded = true;
+function toggleChart() {
+    var bars = document.getElementById('chartBars');
+    var icon = document.getElementById('chartToggleIcon');
+    chartExpanded = !chartExpanded;
+    if (chartExpanded) {
+        bars.classList.remove('is-collapsed');
+        icon.textContent = '−';
+    } else {
+        bars.classList.add('is-collapsed');
+        icon.textContent = '+';
+    }
+}
+
+// ── Course section expansion ─────────────────────────────────
+function toggleSections(reqId, btn) {
+    var sectionsBlock = document.getElementById('sec-' + reqId);
+    var expander      = document.getElementById('exp-' + reqId);
+    var isOpen        = sectionsBlock.classList.contains('open');
+
+    if (isOpen) {
+        sectionsBlock.classList.remove('open');
+        expander.innerHTML =
+            '<button class="expand-btn" onclick="toggleSections(\'' + reqId + '\', this)" title="Expand sections">' +
+            '<i class="bi bi-plus-lg"></i></button>';
+    } else {
+        sectionsBlock.classList.add('open');
+        expander.innerHTML =
+            '<button class="expand-btn-active" onclick="toggleSections(\'' + reqId + '\', this)" title="Collapse sections">' +
+            '&#x2715;</button>';
+    }
+}
+</script>
+}
