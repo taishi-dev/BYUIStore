@@ -54,4 +54,21 @@ public class RequestItem
 
     // ── Suggestions ────────────────────────────────────────────────────────
     public ICollection<MaterialSuggestion> Suggestions { get; set; } = new List<MaterialSuggestion>();
+
+    // ── Virtual display methods (overridden by BookRequestItem / SupplyRequestItem) ──
+    public virtual string GetDisplayTitle() =>
+        ItemType == ItemType.Book
+            ? Title ?? "Untitled Book"
+            : SupplyDescription ?? "Untitled Supply";
+
+    public virtual string GetDisplaySummary()
+    {
+        if (ItemType == ItemType.Book)
+            return string.Join(" · ", new[] { Author, Publisher, Edition }
+                .Where(s => !string.IsNullOrWhiteSpace(s)));
+        return Quantity > 1 ? $"Qty: {Quantity}" : "";
+    }
+
+    public virtual string GetRequirementLabel() =>
+        IsRequired ? "Required" : "Optional";
 }

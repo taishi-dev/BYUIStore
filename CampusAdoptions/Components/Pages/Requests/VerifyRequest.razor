@@ -145,7 +145,7 @@ else
                             </MudChip>
                         </MudTd>
                         <MudTd>
-                            <strong>@(context.Title ?? context.SupplyDescription ?? "---")</strong>
+                            <strong>@context.GetDisplayTitle()</strong>
                         </MudTd>
                         <MudTd>@(context.Author ?? "---")</MudTd>
                         <MudTd>@(context.Isbn ?? "---")</MudTd>
@@ -153,7 +153,7 @@ else
                         <MudTd>
                             <MudChip T="string" Size="Size.Small"
                                      Color="@(context.IsRequired ? Color.Success : Color.Default)">
-                                @(context.IsRequired ? "Required" : "Optional")
+                                @context.GetRequirementLabel()
                             </MudChip>
                         </MudTd>
                     </RowTemplate>

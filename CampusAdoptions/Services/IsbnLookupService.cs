@@ -7,16 +7,17 @@ namespace CampusAdoptions.Services;
 /// Queries the Open Library Search API to auto-populate ISBN, publisher,
 /// and edition from a book title/author — so faculty never type ISBN manually.
 /// </summary>
-public class IsbnLookupService
+public class IsbnLookupService : BookLookupServiceBase
 {
     private readonly HttpClient _http;
-    private readonly ILogger<IsbnLookupService> _logger;
 
     public IsbnLookupService(HttpClient http, ILogger<IsbnLookupService> logger)
+        : base(logger)
     {
         _http = http;
-        _logger = logger;
     }
+
+    public override string ServiceName => "Open Library Search";
 
     public async Task<List<BookSearchResult>> SearchAsync(string title, string? author = null)
     {
@@ -40,15 +41,12 @@ public class IsbnLookupService
             var results = new List<BookSearchResult>();
             foreach (var item in docs.EnumerateArray())
             {
-                // Prefer ISBN-13 over ISBN-10
+                // Prefer ISBN-13 over ISBN-10 (using base class helper)
                 string bestIsbn = "";
                 if (item.TryGetProperty("isbn", out var isbnArr))
                 {
                     var isbns = isbnArr.EnumerateArray().Select(x => x.GetString() ?? "").ToList();
-                    bestIsbn = isbns.FirstOrDefault(s => s.Length == 13)
-                            ?? isbns.FirstOrDefault(s => s.Length == 10)
-                            ?? isbns.FirstOrDefault()
-                            ?? "";
+                    bestIsbn = SelectBestIsbn(isbns);
                 }
 
                 string publisher = "";
@@ -81,7 +79,7 @@ public class IsbnLookupService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "ISBN lookup failed for title='{Title}'", title);
+            LogLookupFailure(title, ex);
             return new List<BookSearchResult>();
         }
     }

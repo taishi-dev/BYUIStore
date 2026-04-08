@@ -13,25 +13,26 @@ namespace CampusAdoptions.Services;
 ///   4. VitalSource catalog page scrape  – handles digital-only ISBNs.
 /// If all sources fail, returns null so the user can fill in manually.
 /// </summary>
-public class IsbnDirectLookupService
+public class IsbnDirectLookupService : BookLookupServiceBase
 {
     private readonly AppDbContext _db;
     private readonly IHttpClientFactory _httpFactory;
-    private readonly ILogger<IsbnDirectLookupService> _logger;
 
     public IsbnDirectLookupService(
         AppDbContext db,
         IHttpClientFactory httpFactory,
         ILogger<IsbnDirectLookupService> logger)
+        : base(logger)
     {
         _db          = db;
         _httpFactory = httpFactory;
-        _logger      = logger;
     }
+
+    public override string ServiceName => "ISBN Direct Lookup";
 
     public async Task<IsbnLookupResult?> LookupAsync(string isbn)
     {
-        isbn = isbn.Trim().Replace("-", "").Replace(" ", "");
+        isbn = NormalizeIsbn(isbn);
         if (string.IsNullOrEmpty(isbn)) return null;
 
         var http = _httpFactory.CreateClient("GoogleBooks");
@@ -153,7 +154,7 @@ public class IsbnDirectLookupService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Google Books lookup failed for ISBN {Isbn}", isbn);
+            LogLookupFailure(isbn, ex);
             return null;
         }
     }
@@ -383,7 +384,7 @@ public class IsbnDirectLookupService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "VitalSource lookup failed for ISBN {Isbn}", isbn);
+            LogLookupFailure(isbn, ex);
             return null;
         }
     }
