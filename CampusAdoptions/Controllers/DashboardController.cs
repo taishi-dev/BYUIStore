@@ -3,21 +3,20 @@ using CampusAdoptions.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Security.Claims;
 
 namespace CampusAdoptions.Controllers;
 
 [Authorize]
-public class DashboardController : Controller
+public class DashboardController : BaseAppController
 {
     private readonly AppDbContext _db;
     public DashboardController(AppDbContext db) => _db = db;
 
-    private int CurrentUserId =>
-        int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+    // ── Polymorphic overrides ─────────────────────────────────────────────
+    public override string GetAreaDisplayName() => "Dashboard";
 
-    private string CurrentRole =>
-        User.FindFirstValue(ClaimTypes.Role) ?? "";
+    public override IEnumerable<string> GetAllowedRoles() =>
+        new[] { "OfficeManager", "MaterialManager" };
 
     // GET /Dashboard  — legacy entry point, dispatches to role-specific action
     public IActionResult Index() => CurrentRole switch

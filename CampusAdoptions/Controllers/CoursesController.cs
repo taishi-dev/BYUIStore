@@ -5,12 +5,11 @@ using CampusAdoptions.ViewModels;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Security.Claims;
 
 namespace CampusAdoptions.Controllers;
 
 [Authorize]
-public class CoursesController : Controller
+public class CoursesController : BaseAppController
 {
     private readonly AppDbContext _db;
     private readonly IEmailService _email;
@@ -26,11 +25,17 @@ public class CoursesController : Controller
         _logger = logger;
     }
 
-    private int CurrentUserId =>
-        int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+    // ── Polymorphic overrides ─────────────────────────────────────────────
+    public override string GetAreaDisplayName() => "Courses";
 
-    private string CurrentRole =>
-        User.FindFirstValue(ClaimTypes.Role) ?? "";
+    public override IEnumerable<string> GetAllowedRoles() =>
+        new[] { "Professor", "OfficeManager", "MaterialManager" };
+
+    public override void SetCommonViewData()
+    {
+        base.SetCommonViewData();
+        ViewData["ShowCourseFilters"] = true;
+    }
 
     // GET /Courses  — staff (OfficeManager / MaterialManager) see all sections
     public async Task<IActionResult> Index(string? search, string? dept, string? filter)

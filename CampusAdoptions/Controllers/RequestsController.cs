@@ -5,13 +5,12 @@ using CampusAdoptions.ViewModels;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Security.Claims;
 using System.Text.Json;
 
 namespace CampusAdoptions.Controllers;
 
 [Authorize]
-public class RequestsController : Controller
+public class RequestsController : BaseAppController
 {
     private readonly AppDbContext _db;
     private readonly BookAvailabilityService _availService;
@@ -22,11 +21,11 @@ public class RequestsController : Controller
         _availService = availService;
     }
 
-    private int CurrentUserId =>
-        int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+    // ── Polymorphic overrides ─────────────────────────────────────────────
+    public override string GetAreaDisplayName() => "Requests";
 
-    private string CurrentRole =>
-        User.FindFirstValue(ClaimTypes.Role) ?? "";
+    public override IEnumerable<string> GetAllowedRoles() =>
+        new[] { "Professor", "OfficeManager", "MaterialManager" };
 
     // ════════════════════════════════════════════════════════════════════════
     // SUBMIT  (Professors & Office Managers)
